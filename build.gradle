@@ -32,7 +32,7 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2' // For testing
     implementation 'org.flywaydb:flyway-core'
-    implementation 'org.flywaydb:flyway-database-postgresql:10.10.0'
+   // implementation 'org.flywaydb:flyway-database-postgresql:10.10.0'
 
     // Selenium (will add later)
     implementation 'org.seleniumhq.selenium:selenium-java:4.16.1'
@@ -70,11 +70,11 @@ jacoco {
 
 // specific configuration for building a library/framework
 bootJar {
-    enabled = false
+    enabled = true
 }
 
 jar {
-    enabled = true
+    enabled = false
     // Optional: avoid 'plain' classifier
     archiveClassifier = ''
 }
