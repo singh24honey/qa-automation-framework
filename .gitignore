@@ -1,0 +1,34 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Spring Boot
+*.log
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+application-local.yml
+*.env
+
+# Test outputs
+screenshots/
+videos/
+reports/
+qa-framework-artifacts/
+
+# H2 Database (local testing)
+*.db
+*.mv.db
+*.trace.db

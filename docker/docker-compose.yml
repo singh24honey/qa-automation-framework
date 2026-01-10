@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: qa-postgres
+    environment:
+      POSTGRES_DB: qa_framework
+      POSTGRES_USER: qa_user
+      POSTGRES_PASSWORD: qa_pass123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa_user -d qa_framework"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: qa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  selenium-hub:
+    image: selenium/hub:4.16.1
+    container_name: selenium-hub
+    ports:
+      - "4444:4444"
+      - "4442:4442"
+      - "4443:4443"
+    environment:
+      GRID_MAX_SESSION: 5
+      GRID_TIMEOUT: 300
+
+  chrome:
+    image: selenium/node-chrome:4.16.1
+    container_name: selenium-chrome
+    depends_on:
+      - selenium-hub
+    environment:
+      SE_EVENT_BUS_HOST: selenium-hub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+      SE_NODE_MAX_SESSIONS: 2
+      SE_VNC_NO_PASSWORD: 1
+    ports:
+      - "7900:7900"
+    volumes:
+      - /dev/shm:/dev/shm
+    shm_size: 2gb
+
+volumes:
+  postgres_data:
+  redis_data:
