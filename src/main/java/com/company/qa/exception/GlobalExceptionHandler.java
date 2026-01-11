@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -41,5 +42,41 @@ public class GlobalExceptionHandler {
         body.put("message", "An unexpected error occurred");
 
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    // Add these methods to GlobalExceptionHandler.java
+
+    @ExceptionHandler(StorageException.class)
+    public ResponseEntity<Map<String, Object>> handleStorageException(
+            StorageException ex,
+            WebRequest request) {
+
+        log.error("Storage error: {}", ex.getMessage());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", Instant.now());
+        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        body.put("error", "Storage Error");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @ExceptionHandler(FileNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleFileNotFound(
+            FileNotFoundException ex,
+            WebRequest request) {
+
+        log.error("File not found: {}", ex.getMessage());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", Instant.now());
+        body.put("status", HttpStatus.NOT_FOUND.value());
+        body.put("error", "File Not Found");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
     }
 }

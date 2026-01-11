@@ -17,8 +17,29 @@ spring:
 
 storage:
   type: local
-  base-path: ${java.io.tmpdir}/qa-framework-test
+  base-path: ${user.home}/qa-framework/artifacts
+  screenshots: ${storage.base-path}/screenshots
+  videos: ${storage.base-path}/videos
+  logs: ${storage.base-path}/logs
+  reports: ${storage.base-path}/reports
+  retention-days: 30
+  max-file-size-mb: 10
+  allowed-extensions:
+    - png
+    - jpg
+    - jpeg
+    - txt
+    - log
+    - html
+    - json
+    - mp4
+  cleanup:
+    enabled: true
+    schedule: "0 0 2 * * *"
 
 logging:
   level:
+    root: INFO
     com.company.qa: DEBUG
+    com.company.qa.security: DEBUG
+    com.company.qa.service.storage: DEBUG

@@ -1,16 +1,19 @@
 package com.company.qa.config;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 import jakarta.annotation.PostConstruct;
 import java.io.File;
+import java.util.List;
 
 @Configuration
 @ConfigurationProperties(prefix = "storage")
 @Getter
+@Setter
 @Slf4j
 public class StorageConfig {
 
@@ -20,7 +23,17 @@ public class StorageConfig {
     private String videos;
     private String logs;
     private String reports;
+    private Integer retentionDays;
+    private Integer maxFileSizeMb;
+    private List<String> allowedExtensions;
+    private CleanupConfig cleanup;
 
+    @Getter
+    @Setter
+    public static class CleanupConfig {
+        private Boolean enabled;
+        private String schedule;
+    }
     public void setType(String type) {
         this.type = type;
     }
@@ -70,6 +83,11 @@ public class StorageConfig {
 
     @PostConstruct
     public void init() {
+        log.info("Initializing storage configuration...");
+        log.info("Base path: {}", basePath);
+        log.info("Retention days: {}", retentionDays);
+        log.info("Max file size: {} MB", maxFileSizeMb);
+
         if (basePath == null || basePath.isBlank()) {
             throw new IllegalStateException("storage.base-path must be configured");
         }
@@ -94,7 +112,11 @@ public class StorageConfig {
         File dir = new File(path);
         if (!dir.exists()) {
             boolean created = dir.mkdirs();
-            log.debug("Directory {} created: {}", path, created);
+            if (created) {
+                log.debug("Created directory: {}", path);
+            } else {
+                log.error("Failed to create directory: {}", path);
+            }
         }
     }
 }
