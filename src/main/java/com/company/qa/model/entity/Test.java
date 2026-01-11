@@ -39,6 +39,7 @@ public class Test extends BaseEntity {
     @Column(name = "estimated_duration")
     private Integer estimatedDuration;
 
+    @Builder.Default
     @Column(name = "is_active")
     private Boolean isActive = true;
 

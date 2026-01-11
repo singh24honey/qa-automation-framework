@@ -45,26 +45,56 @@ public class StorageConfig {
         this.reports = reports;
     }
 
-    @PostConstruct
+   /* @PostConstruct
     public void init() {
         createDirectories();
-    }
+    }*/
 
-    private void createDirectories() {
+    /*private void createDirectories() {
         createDirectory(screenshots);
         createDirectory(videos);
         createDirectory(logs);
         createDirectory(reports);
         log.info("Storage directories initialized at: {}", basePath);
-    }
+    }*/
 
-    private void createDirectory(String path) {
+   /* private void createDirectory(String path) {
         File dir = new File(path);
         if (!dir.exists()) {
             boolean created = dir.mkdirs();
             if (created) {
                 log.debug("Created directory: {}", path);
             }
+        }
+    }*/
+
+    @PostConstruct
+    public void init() {
+        if (basePath == null || basePath.isBlank()) {
+            throw new IllegalStateException("storage.base-path must be configured");
+        }
+
+        createDirectories();
+    }
+
+    private void createDirectories() {
+        createDirectory(resolve("screenshots"));
+        createDirectory(resolve("videos"));
+        createDirectory(resolve("logs"));
+        createDirectory(resolve("reports"));
+
+        log.info("Storage directories initialized at: {}", basePath);
+    }
+
+    private String resolve(String subDir) {
+        return basePath + File.separator + subDir;
+    }
+
+    private void createDirectory(String path) {
+        File dir = new File(path);
+        if (!dir.exists()) {
+            boolean created = dir.mkdirs();
+            log.debug("Directory {} created: {}", path, created);
         }
     }
 }

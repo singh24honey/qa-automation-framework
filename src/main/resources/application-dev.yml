@@ -43,7 +43,26 @@ selenium:
   implicit-wait: 10
   page-load-timeout: 30
 
+#logging:
+  #level:
+   # com.company.qa: DEBUG
+    #org.hibernate.SQL: DEBUG
+
+# Add to existing application-dev.yml
+
+# Security configuration
+security:
+  api-key:
+    header-name: X-API-Key
+    rate-limit:
+      enabled: true
+      requests-per-minute: 100
+    logging:
+      enabled: true
+
 logging:
   level:
+    root: INFO
     com.company.qa: DEBUG
-    org.hibernate.SQL: DEBUG
+    com.company.qa.security: DEBUG  # ADD THIS
+    org.springframework.security: DEBUG  # ADD THIS (for troubleshooting)
