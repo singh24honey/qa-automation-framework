@@ -1,5 +1,7 @@
 package com.company.qa.service.execution;
 
+import com.company.qa.model.dto.FailureAnalysis;
+import com.company.qa.model.dto.RetryConfig;
 import com.company.qa.model.dto.TestScript;
 import com.company.qa.model.dto.TestStep;
 import com.company.qa.service.storage.FileStorageService;
@@ -21,8 +23,10 @@ public class SeleniumTestExecutor {
 
     private final WebDriverFactory webDriverFactory;
     private final FileStorageService fileStorageService;
+    private final FailureAnalyzer failureAnalyzer;  // ADD THIS
+    private final RetryService retryService;        // ADD THIS
 
-    public ExecutionResult execute(String executionId, TestScript testScript, String browser, boolean headless) {
+    public ExecutionResult execute(String executionId, TestScript testScript, String browser, boolean headless, RetryConfig retryConfig) {
         log.info("Executing test: {} on browser: {}", testScript.getName(), browser);
 
         WebDriver driver = null;
@@ -31,58 +35,106 @@ public class SeleniumTestExecutor {
         result.setTestName(testScript.getName());
         result.setStartTime(System.currentTimeMillis());
         result.setSuccess(false);
+        result.setRetryConfig(retryConfig);
 
         List<String> screenshotUrls = new ArrayList<>();
         List<String> executionLogs = new ArrayList<>();
+        List<FailureAnalysis> failureHistory = new ArrayList<>();  // ADD THIS
+
 
         try {
             // Create WebDriver
             driver = webDriverFactory.createDriver(browser, headless);
             executionLogs.add("WebDriver created successfully: " + browser);
 
+            final WebDriver finalDriver = driver;
+
             // Execute each step
             for (int i = 0; i < testScript.getSteps().size(); i++) {
+                final int stepNumber = i + 1;
                 TestStep step = testScript.getSteps().get(i);
 
-                try {
+
                     log.debug("Executing step {}: {}", i + 1, step.getAction());
-                    executeStep(driver, step, executionId, i + 1);
-                    executionLogs.add(String.format("Step %d: %s - PASSED", i + 1, step.getAction()));
+                    RetryService.RetryResult<Void> retryResult = retryService.executeWithRetry(
+                            () -> {
+                                executeStep(finalDriver, step, executionId, stepNumber);
+                                return null;
+                            },
+                            retryConfig,
+                            "Step " + stepNumber + ": " + step.getAction()
+                    );
 
-                } catch (Exception e) {
-                    log.error("Step {} failed: {}", i + 1, e.getMessage());
-                    executionLogs.add(String.format("Step %d: %s - FAILED: %s", i + 1, step.getAction(), e.getMessage()));
+                    if (retryResult.isSuccess()) {
+                        executionLogs.add(String.format(
+                                "Step %d: %s - PASSED (attempts: %d)",
+                                stepNumber, step.getAction(), retryResult.getAttempts()
+                        ));
+                        if (retryResult.getAttempts() > 1) {
+                            // Step succeeded after retry
+                            executionLogs.add(String.format(
+                                    "  ⟳ Step recovered after %d retries",
+                                    retryResult.getAttempts() - 1
+                            ));
+                            failureHistory.addAll(retryResult.getFailures());
+                        }
 
-                    // Capture failure screenshot
-                    String screenshotUrl = captureScreenshot(driver, executionId, "step-" + (i + 1) + "-failure");
-                    if (screenshotUrl != null) {
-                        screenshotUrls.add(screenshotUrl);
+                    } else {
+                        // Step failed after all retries
+                        FailureAnalysis failure = retryResult.getLastFailure();
+
+                        executionLogs.add(String.format(
+                                "Step %d: %s - FAILED after %d attempts",
+                                stepNumber, step.getAction(), retryResult.getAttempts()
+                        ));
+                        executionLogs.add("  Error: " + failure.getErrorMessage());
+                        executionLogs.add("  Type: " + failure.getFailureType());
+                        executionLogs.add("  Suggestion: " + failure.getSuggestion());
+
+                        failureHistory.addAll(retryResult.getFailures());
+
+                        // Capture failure screenshot
+                        String screenshotUrl = captureScreenshot(
+                                finalDriver, executionId, "step-" + stepNumber + "-failure"
+                        );
+                        if (screenshotUrl != null) {
+                            screenshotUrls.add(screenshotUrl);
+                        }
+
+                        result.setSuccess(false);
+                        result.setErrorMessage(failure.getErrorMessage());
+                        result.setFailedStep(stepNumber);
+                        result.setFailureAnalysis(failure);
+                        break;
                     }
 
-                    result.setSuccess(false);
-                    result.setErrorMessage(e.getMessage());
-                    result.setFailedStep(i + 1);
-                    break;
-                }
-            }
 
-            // If all steps passed
+                    if (result.isSuccess()) {
+                        result.setSuccess(true);
+                        executionLogs.add("All steps completed successfully");
 
-                result.setSuccess(true);
-                executionLogs.add("All steps completed successfully");
+                        // Capture final screenshot
+                        String screenshotUrl = captureScreenshot(driver, executionId, "final-success");
+                        if (screenshotUrl != null) {
+                            screenshotUrls.add(screenshotUrl);
 
-                // Capture final screenshot
-                String screenshotUrl = captureScreenshot(driver, executionId, "final-success");
-                if (screenshotUrl != null) {
-                    screenshotUrls.add(screenshotUrl);
-                }
+                        }
+                    }}
 
 
         } catch (Exception e) {
             log.error("Execution failed: {}", e.getMessage(), e);
+            FailureAnalysis analysis = failureAnalyzer.analyze(e, null);
+
             result.setSuccess(false);
             result.setErrorMessage("Execution error: " + e.getMessage());
+            result.setFailureAnalysis(analysis);
+
             executionLogs.add("EXECUTION ERROR: " + e.getMessage());
+            executionLogs.add("Type: " + analysis.getFailureType());
+            executionLogs.add("Suggestion: " + analysis.getSuggestion());
+
+            failureHistory.add(analysis);
 
             if (driver != null) {
                 String screenshotUrl = captureScreenshot(driver, executionId, "execution-error");
@@ -95,6 +147,7 @@ public class SeleniumTestExecutor {
             result.setEndTime(System.currentTimeMillis());
             result.setDurationMs((int) (result.getEndTime() - result.getStartTime()));
             result.setScreenshotUrls(screenshotUrls);
+            result.setFailureHistory(failureHistory);
 
             // Save execution logs
             String logContent = String.join("\n", executionLogs);
@@ -221,5 +274,8 @@ public class SeleniumTestExecutor {
         private Integer durationMs;
         private List<String> screenshotUrls;
         private String logUrl;
+        private RetryConfig retryConfig;                    // ADD THIS
+        private FailureAnalysis failureAnalysis;            // ADD THIS
+        private List<FailureAnalysis> failureHistory;
     }
 }

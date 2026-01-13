@@ -80,3 +80,14 @@ logging:
     com.company.qa: DEBUG
     com.company.qa.security: DEBUG  # ADD THIS
     org.springframework.security: DEBUG  # ADD THIS (for troubleshooting)
+
+execution:
+  timeout-minutes: 10
+  max-concurrent: 3
+  retry:
+    enabled: true
+    max-attempts: 2
+    delay-seconds: 5
+    retry-on-timeout: true
+    retry-on-network-error: true
+    retry-on-assertion-failure: false

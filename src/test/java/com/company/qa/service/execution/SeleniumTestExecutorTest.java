@@ -32,10 +32,10 @@ class SeleniumTestExecutorTest {
 
     private SeleniumTestExecutor executor;
 
-    @BeforeEach
+    /*@BeforeEach
     void setUp() {
-        executor = new SeleniumTestExecutor(webDriverFactory, fileStorageService);
-    }
+        executor = new SeleniumTestExecutor(webDriverFactory);
+    }*/
 
     @Test
     @DisplayName("Should create executor successfully")

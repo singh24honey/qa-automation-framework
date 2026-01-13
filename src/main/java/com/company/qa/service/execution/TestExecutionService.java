@@ -3,6 +3,7 @@ package com.company.qa.service.execution;
 import com.company.qa.exception.ResourceNotFoundException;
 import com.company.qa.model.dto.ExecutionRequest;
 import com.company.qa.model.dto.ExecutionResponse;
+import com.company.qa.model.dto.RetryConfig;
 import com.company.qa.model.dto.TestScript;
 import com.company.qa.model.entity.Test;
 import com.company.qa.model.entity.TestExecution;
@@ -12,6 +13,7 @@ import com.company.qa.repository.TestRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +34,11 @@ public class TestExecutionService {
     private final TestExecutionRepository testExecutionRepository;
     private final SeleniumTestExecutor seleniumTestExecutor;
     private final ObjectMapper objectMapper;
+    private final ExecutionCancellationService cancellationService;  // ADD THIS
+
+
+    @Value("${execution.timeout-minutes:10}")
+    private int timeoutMinutes;
 
 
     @Transactional
@@ -64,24 +71,38 @@ public class TestExecutionService {
                 .orElseThrow();
 
         try {
+            // Check cancellation BEFORE starting
+            if (cancellationService.isCancelled(executionId)) {
+                execution.setStatus(TestStatus.CANCELLED);
+                execution.setErrorDetails("Execution cancelled before start");
+                execution.setEndTime(Instant.now());
+                testExecutionRepository.save(execution);
+                return;
+            }
+
             execution.setStatus(TestStatus.RUNNING);
+            execution.setStartTime(Instant.now());
             testExecutionRepository.save(execution);
 
             Test test = testRepository.findById(request.getTestId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Test", request.getTestId().toString()));
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException("Test", request.getTestId().toString()));
 
             TestScript testScript = parseTestScript(test.getContent());
 
             boolean headless = request.getHeadless() != null ? request.getHeadless() : true;
             String browser = request.getBrowser() != null ? request.getBrowser() : "CHROME";
 
+            RetryConfig retryConfig = buildRetryConfig(request);
+
             SeleniumTestExecutor.ExecutionResult result =
                     seleniumTestExecutor.execute(
                             executionId.toString(),
                             testScript,
                             browser,
-                            headless
+                            headless,
+                            retryConfig
+                            //timeoutMinutes
                     );
 
             execution.setEndTime(Instant.now());
@@ -89,22 +110,74 @@ public class TestExecutionService {
             execution.setStatus(result.isSuccess() ? TestStatus.PASSED : TestStatus.FAILED);
             execution.setErrorDetails(result.getErrorMessage());
             execution.setLogUrl(result.getLogUrl());
+            execution.setRetryCount(
+                    result.getFailureHistory() != null ? result.getFailureHistory().size() : 0
+            );
 
-            if (result.getScreenshotUrls() != null) {
+            if (result.getScreenshotUrls() != null && !result.getScreenshotUrls().isEmpty()) {
                 execution.setScreenshotUrls(result.getScreenshotUrls().toArray(new String[0]));
             }
 
             testExecutionRepository.save(execution);
+            cancellationService.clearCancellation(executionId);
+
+            log.info("Execution completed: {} status={}", executionId, execution.getStatus());
 
         } catch (Exception e) {
+            log.error("Execution failed: {}", executionId, e);
+
             execution.setStatus(TestStatus.ERROR);
             execution.setEndTime(Instant.now());
             execution.setErrorDetails(e.getMessage());
             testExecutionRepository.save(execution);
+
+            cancellationService.clearCancellation(executionId);
         }
     }
 
-    @Async("taskExecutor")
+    /* =========================================================
+       CANCELLATION (Week 2 Day 4)
+       ========================================================= */
+
+    @Transactional
+    public void cancelExecution(UUID executionId) {
+
+        TestExecution execution = testExecutionRepository.findById(executionId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Execution", executionId.toString()));
+
+        if (execution.getStatus() == TestStatus.RUNNING ||
+                execution.getStatus() == TestStatus.QUEUED) {
+
+            cancellationService.cancelExecution(executionId);
+
+            execution.setStatus(TestStatus.CANCELLED);
+            execution.setEndTime(Instant.now());
+            execution.setErrorDetails("Execution cancelled by user");
+            testExecutionRepository.save(execution);
+
+            log.info("Execution cancelled: {}", executionId);
+        } else {
+            log.warn("Cannot cancel execution {} in status {}", executionId, execution.getStatus());
+        }
+    }
+
+    /* =========================================================
+       RETRY CONFIG (Week 2 Day 4)
+       ========================================================= */
+
+    private RetryConfig buildRetryConfig(ExecutionRequest request) {
+        return RetryConfig.builder()
+                .enabled(true)
+                .maxAttempts(2)
+                .delaySeconds(5)
+                .retryOnTimeout(true)
+                .retryOnNetworkError(true)
+                .retryOnAssertionFailure(false)
+                .build();
+    }
+
+    /*@Async("taskExecutor")
     @Transactional
     public CompletableFuture<ExecutionResponse> executeTestAsyncold(ExecutionRequest request) {
         log.info("Starting async test execution for test: {}", request.getTestId());
@@ -175,7 +248,7 @@ public class TestExecutionService {
             return CompletableFuture.completedFuture(toResponse(execution));
         }
     }
-
+*/
     @Transactional(readOnly = true)
     public ExecutionResponse getExecutionStatus(UUID executionId) {
         TestExecution execution = testExecutionRepository.findById(executionId)

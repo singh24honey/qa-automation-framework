@@ -54,3 +54,15 @@ selenium:
   grid-url: http://localhost:4444/wd/hub
   implicit-wait: 10
   page-load-timeout: 30
+
+
+execution:
+  timeout-minutes: 10
+  max-concurrent: 3
+  retry:
+    enabled: true
+    max-attempts: 2
+    delay-seconds: 5
+    retry-on-timeout: true
+    retry-on-network-error: true
+    retry-on-assertion-failure: false

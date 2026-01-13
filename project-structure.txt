@@ -1,0 +1,99 @@
+src/
+├── main
+│   ├── java
+│   │   └── com
+│   │       └── company
+│   │           └── qa
+│   │               ├── QaFrameworkApplication.java
+│   │               ├── config
+│   │               │   ├── AsyncConfig.java
+│   │               │   ├── CacheConfig.java
+│   │               │   ├── SecurityConfig.java
+│   │               │   └── StorageConfig.java
+│   │               ├── controller
+│   │               │   ├── ApiKeyController.java
+│   │               │   ├── FileStorageController.java
+│   │               │   ├── TestController.java
+│   │               │   └── TestExecutionController.java
+│   │               ├── exception
+│   │               │   ├── FileNotFoundException.java
+│   │               │   ├── GlobalExceptionHandler.java
+│   │               │   ├── QaFrameworkException.java
+│   │               │   ├── ResourceNotFoundException.java
+│   │               │   └── StorageException.java
+│   │               ├── model
+│   │               │   ├── StringListConverter.java
+│   │               │   ├── dto
+│   │               │   │   ├── ApiKeyDto.java
+│   │               │   │   ├── ApiResponse.java
+│   │               │   │   ├── CreateApiKeyRequest.java
+│   │               │   │   ├── ExecutionRequest.java
+│   │               │   │   ├── ExecutionResponse.java
+│   │               │   │   ├── FileMetadata.java
+│   │               │   │   ├── StorageStats.java
+│   │               │   │   ├── TestDto.java
+│   │               │   │   ├── TestScript.java
+│   │               │   │   └── TestStep.java
+│   │               │   ├── entity
+│   │               │   │   ├── ApiKey.java
+│   │               │   │   ├── BaseEntity.java
+│   │               │   │   ├── RequestLog.java
+│   │               │   │   ├── Test.java
+│   │               │   │   └── TestExecution.java
+│   │               │   └── enums
+│   │               │       ├── FileType.java
+│   │               │       ├── Priority.java
+│   │               │       ├── TestFramework.java
+│   │               │       └── TestStatus.java
+│   │               ├── repository
+│   │               │   ├── ApiKeyRepository.java
+│   │               │   ├── RequestLogRepository.java
+│   │               │   ├── TestExecutionRepository.java
+│   │               │   └── TestRepository.java
+│   │               ├── security
+│   │               │   └── ApiKeyAuthenticationFilter.java
+│   │               ├── service
+│   │               │   ├── ApiKeyService.java
+│   │               │   ├── RequestLogService.java
+│   │               │   ├── TestService.java
+│   │               │   ├── execution
+│   │               │   │   ├── SeleniumTestExecutor.java
+│   │               │   │   ├── TestExecutionService.java
+│   │               │   │   └── WebDriverFactory.java
+│   │               │   └── storage
+│   │               │       ├── FileStorageService.java
+│   │               │       └── StorageCleanupService.java
+│   │               └── util
+│   │                   └── SecurityUtils.java
+│   └── resources
+│       ├── application-dev.yml
+│       ├── application-test.yml
+│       ├── application.yml
+│       └── db
+│           └── migration
+│               ├── V1__Initial_Schema.sql
+│               ├── V2__Add_Security_Tables.sql
+│               ├── V3__Add_Execution_Enhancements.sql
+│               └── V4__Add_platform_to_test_executions.sql
+└── test
+    ├── java
+    │   └── com
+    │       └── company
+    │           └── qa
+    │               ├── integration
+    │               │   ├── FileStorageIntegrationTest.java
+    │               │   ├── SecurityIntegrationTest.java
+    │               │   ├── TestControllerIntegrationTest.java
+    │               │   └── TestExecutionIntegrationTest.java
+    │               ├── service
+    │               │   ├── ApiKeyServiceTest.java
+    │               │   ├── TestServiceTest.java
+    │               │   ├── execution
+    │               │   │   └── SeleniumTestExecutorTest.java
+    │               │   └── storage
+    │               │       └── FileStorageServiceTest.java
+    │               └── util
+    │                   └── SecurityUtilsTest.java
+    └── resources
+
+33 directories, 64 files

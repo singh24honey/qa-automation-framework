@@ -101,5 +101,16 @@ public class TestExecutionController {
         return ResponseEntity.ok(ApiResponse.success(executions));
     }
 
+    // Add to existing TestExecutionController
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> cancelExecution(@PathVariable UUID id) {
+        log.info("DELETE /api/v1/executions/{} - Cancelling execution", id);
+
+        testExecutionService.cancelExecution(id);
+
+        return ResponseEntity.ok(ApiResponse.success(null, "Execution cancelled successfully"));
+    }
+
 
 }

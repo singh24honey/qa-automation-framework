@@ -6,5 +6,7 @@ public enum TestStatus {
     PASSED,
     FAILED,
     SKIPPED,
-    ERROR
+    ERROR,
+    CANCELLED,
+    TIMEOUT
 }
