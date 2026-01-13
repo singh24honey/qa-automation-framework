@@ -3,62 +3,67 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: qa-postgres
     environment:
       POSTGRES_DB: qa_framework
-      POSTGRES_USER: qa_user
-      POSTGRES_PASSWORD: qa_pass123
+      POSTGRES_USER: qauser
+      POSTGRES_PASSWORD: qapass
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qa_user -d qa_framework"]
+      test: ["CMD-SHELL", "pg_isready -U qauser"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: qa-redis
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # Use seleniarm for Apple Silicon
   selenium-hub:
-    image: selenium/hub:4.16.1
-    container_name: selenium-hub
+    image: seleniarm/hub:latest
     ports:
       - "4444:4444"
       - "4442:4442"
       - "4443:4443"
     environment:
-      GRID_MAX_SESSION: 5
-      GRID_TIMEOUT: 300
+      - SE_SESSION_REQUEST_TIMEOUT=300
+      - SE_SESSION_RETRY_INTERVAL=5
+      - SE_HEALTHCHECK_INTERVAL=10
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  chrome:
-    image: selenium/node-chrome:4.16.1
-    container_name: selenium-chrome
+  selenium-chrome:
+    image: seleniarm/node-chromium:latest
     depends_on:
-      - selenium-hub
+      selenium-hub:
+        condition: service_healthy
     environment:
-      SE_EVENT_BUS_HOST: selenium-hub
-      SE_EVENT_BUS_PUBLISH_PORT: 4442
-      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
-      SE_NODE_MAX_SESSIONS: 2
-      SE_VNC_NO_PASSWORD: 1
-    ports:
-      - "7900:7900"
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=5
+      - SE_NODE_SESSION_TIMEOUT=300
+      - START_XVFB=false
+      - SE_SCREEN_WIDTH=1920
+      - SE_SCREEN_HEIGHT=1080
+      - SE_VNC_NO_PASSWORD=1
+    shm_size: 2gb
     volumes:
       - /dev/shm:/dev/shm
-    shm_size: 2gb
+    ports:
+      - "7900:7900"  # VNC port for debugging
 
 volumes:
   postgres_data:
-  redis_data:

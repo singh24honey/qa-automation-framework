@@ -23,4 +23,5 @@ public class TestDto {
     private Priority priority;
     private Integer estimatedDuration;
     private Boolean isActive;
+    private String content;
 }

@@ -59,6 +59,11 @@ public class TestService {
         existing.setEstimatedDuration(testDto.getEstimatedDuration());
         existing.setIsActive(testDto.getIsActive());
 
+        // ✅ IMPORTANT: update content if provided
+        if (testDto.getContent() != null) {
+            existing.setContent(testDto.getContent());
+        }
+
         Test updated = testRepository.save(existing);
         return toDto(updated);
     }
@@ -83,6 +88,7 @@ public class TestService {
                 .priority(test.getPriority())
                 .estimatedDuration(test.getEstimatedDuration())
                 .isActive(test.getIsActive())
+                .content(test.getContent())
                 .build();
     }
 
@@ -95,7 +101,7 @@ public class TestService {
                 .priority(dto.getPriority())
                 .estimatedDuration(dto.getEstimatedDuration())
                 .isActive(true)
-                .content("// Test content placeholder")
+                .content(dto.getContent())
                 .build();
     }
 }

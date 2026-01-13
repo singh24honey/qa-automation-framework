@@ -58,6 +58,10 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
 
     implementation 'commons-io:commons-io:2.15.1'
+    testImplementation 'com.jayway.jsonpath:json-path:2.8.0'
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+
+
 }
 
 tasks.named('test') {

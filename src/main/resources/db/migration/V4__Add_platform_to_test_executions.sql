@@ -1,0 +1,2 @@
+ALTER TABLE test_executions
+ADD COLUMN IF NOT EXISTS platform VARCHAR(100);
