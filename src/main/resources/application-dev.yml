@@ -91,3 +91,23 @@ execution:
     retry-on-timeout: true
     retry-on-network-error: true
     retry-on-assertion-failure: false
+
+
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      leak-detection-threshold: 60000  # ADD THIS - detect leaks
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,hikaricp  # ADD hikaricp
+  metrics:
+    export:
+      prometheus:
+        enabled: true
