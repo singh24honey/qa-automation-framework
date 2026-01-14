@@ -94,3 +94,5 @@ execution:
     retry-on-assertion-failure: false
 
 
+scheduling:
+  enabled: true
