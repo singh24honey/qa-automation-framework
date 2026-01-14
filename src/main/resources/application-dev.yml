@@ -150,3 +150,22 @@ notification:
           auth: ${notification.email.smtp.auth}
           starttls:
             enable: ${notification.email.smtp.starttls}
+
+ai:
+  enabled: true
+  provider: ${AI_PROVIDER:mock}  # mock, bedrock, or ollama
+
+  bedrock:
+    enabled: false
+    region: ${AWS_REGION:us-east-1}
+    model: anthropic.claude-3-sonnet-20240229-v1:0
+    max-tokens: 4096
+    temperature: 0.7
+    timeout: 120
+
+  ollama:
+    enabled: true
+    url: ${OLLAMA_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llama3}
+    timeout: 120
+    temperature: 0.7
