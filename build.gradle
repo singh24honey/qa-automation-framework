@@ -60,6 +60,7 @@ dependencies {
     implementation 'commons-io:commons-io:2.15.1'
     testImplementation 'com.jayway.jsonpath:json-path:2.8.0'
     implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+    implementation 'com.cronutils:cron-utils:9.2.1'
 
 
 }
