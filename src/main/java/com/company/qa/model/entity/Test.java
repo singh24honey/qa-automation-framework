@@ -45,4 +45,13 @@ public class Test extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String content;
+
+    @Column(name = "notify_on_failure")
+    @Builder.Default
+    private Boolean notifyOnFailure = true;  // Default: notify on failures
+
+    @Column(name = "notify_on_success")
+    @Builder.Default
+    private Boolean notifyOnSuccess = false;  // Default: don't notify on success
+
 }

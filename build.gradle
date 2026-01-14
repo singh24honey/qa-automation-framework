@@ -62,6 +62,18 @@ dependencies {
     implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
     implementation 'com.cronutils:cron-utils:9.2.1'
 
+    // Email support
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // Template engine for emails
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+
+    // HTTP client for webhooks
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+    // JSON processing (if not already present)
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
 
 }
 

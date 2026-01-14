@@ -96,3 +96,57 @@ execution:
 
 scheduling:
   enabled: true
+
+# Add to existing application-dev.yml (keep everything else)
+
+# Notification configuration
+notification:
+  enabled: true
+  async: true
+  retry:
+    enabled: true
+    max-attempts: 3
+    delay-seconds: 10
+  rate-limit:
+    enabled: true
+    max-per-minute: 10
+
+  # Email configuration
+  email:
+    enabled: true
+    from: qa-framework@company.com
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      username: ${EMAIL_USERNAME:your-email@gmail.com}
+      password: ${EMAIL_PASSWORD:your-app-password}
+      auth: true
+      starttls: true
+
+  # Slack configuration
+  slack:
+    enabled: true
+    webhook-url: ${SLACK_WEBHOOK_URL:https://hooks.slack.com/services/YOUR/WEBHOOK/URL}
+    channel: '#qa-alerts'
+    username: 'QA Framework Bot'
+    icon-emoji: ':robot_face:'
+
+  # Webhook configuration
+  webhook:
+    enabled: true
+    default-url: ${WEBHOOK_URL:http://localhost:8080/api/v1/webhooks/default}
+    timeout-seconds: 10
+
+# Update Spring Mail configuration
+
+  mail:
+    host: ${notification.email.smtp.host}
+    port: ${notification.email.smtp.port}
+    username: ${notification.email.smtp.username}
+    password: ${notification.email.smtp.password}
+    properties:
+      mail:
+        smtp:
+          auth: ${notification.email.smtp.auth}
+          starttls:
+            enable: ${notification.email.smtp.starttls}
