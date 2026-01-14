@@ -2,7 +2,8 @@ package com.company.qa.repository;
 
 import com.company.qa.model.entity.TestExecution;
 import com.company.qa.model.enums.TestStatus;
-import org.springdoc.core.converters.models.Pageable;
+import org.springframework.data.domain.Pageable;  // ← CORRECT import
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,5 +23,7 @@ public interface TestExecutionRepository extends JpaRepository<TestExecution, UU
     List<TestExecution> findByStartTimeBetween(Instant start, Instant end);
 
     List<TestExecution> findTop10ByOrderByStartTimeDesc();
+
+    Page<TestExecution> findAllByOrderByStartTimeDesc(Pageable pageable);
 
 }
