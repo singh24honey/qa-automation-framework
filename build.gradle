@@ -19,6 +19,11 @@ repositories {
     mavenCentral()
 }
 
+// Define AWS SDK version in one place for consistency
+ext {
+    awsSdkVersion = '2.25.27'  // Use a recent stable version with Bedrock support
+}
+
 dependencies {
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-web'
@@ -32,14 +37,14 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2' // For testing
     implementation 'org.flywaydb:flyway-core'
-   // implementation 'org.flywaydb:flyway-database-postgresql:10.10.0'
+    // implementation 'org.flywaydb:flyway-database-postgresql:10.10.0'
 
-    // Selenium (will add later)
+    // Selenium
     implementation 'org.seleniumhq.selenium:selenium-java:4.16.1'
     implementation 'io.github.bonigarcia:webdrivermanager:5.6.2'
 
-    // Utilities
-    implementation 'org.apache.commons:commons-lang3'
+    // Utilities - FIXED: removed extra spaces in commons-lang3
+    implementation 'org.apache.commons:commons-lang3:3.14.0'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
@@ -49,7 +54,8 @@ dependencies {
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.rest-assured:rest-assured:5.4.0'
-    // Security - ADD THESE
+
+    // Security
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'com.google.guava:guava:32.1.3-jre'
     implementation 'commons-codec:commons-codec:1.16.0'
@@ -71,10 +77,22 @@ dependencies {
     // HTTP client for webhooks
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
-    // JSON processing (if not already present)
+    // JSON processing
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 
+    // AWS SDK v2 for Bedrock - FIXED: Using compatible version with Bedrock support
+    // Bedrock Runtime was introduced in AWS SDK v2.21.x
+    implementation "software.amazon.awssdk:bedrockruntime:${awsSdkVersion}"
+    implementation "software.amazon.awssdk:bedrock:${awsSdkVersion}"  // Added for model listing/management
+    implementation "software.amazon.awssdk:auth:${awsSdkVersion}"
+    implementation "software.amazon.awssdk:regions:${awsSdkVersion}"
+    implementation "software.amazon.awssdk:apache-client:${awsSdkVersion}"
 
+    // AWS SDK BOM for better dependency management (recommended approach)
+    implementation platform("software.amazon.awssdk:bom:${awsSdkVersion}")
+
+    // JSON processing for Bedrock
+    implementation 'org.json:json:20231013'  // Updated to newer version
 }
 
 tasks.named('test') {
@@ -101,6 +119,5 @@ bootJar {
 
 jar {
     enabled = false
-    // Optional: avoid 'plain' classifier
     archiveClassifier = ''
 }

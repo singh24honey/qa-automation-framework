@@ -6,5 +6,5 @@ public enum AITaskType {
     FIX_SUGGESTION,       // Suggest fixes for failures
     CODE_REVIEW,          // Review test code
     TEST_OPTIMIZATION,    // Optimize existing tests
-    DOCUMENTATION         // Generate documentation
+    GENERAL, DOCUMENTATION         // Generate documentation
 }

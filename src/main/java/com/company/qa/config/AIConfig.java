@@ -18,8 +18,10 @@ public class AIConfig {
     public static class BedrockConfig {
         private boolean enabled = false;
         private String region = "us-east-1";
-        private String model = "anthropic.claude-3-sonnet-20240229-v1:0";
-        private Integer maxTokens = 4096;
+        private String accessKeyId;
+        private String secretAccessKey;
+        private String model = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+        private Integer maxTokens = 1024;
         private Double temperature = 0.7;
         private Integer timeout = 120; // seconds
     }

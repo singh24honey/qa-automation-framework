@@ -17,12 +17,6 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      timeout: 2000ms
-
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -156,10 +150,12 @@ ai:
   provider: ${AI_PROVIDER:mock}  # mock, bedrock, or ollama
 
   bedrock:
-    enabled: false
+    enabled: ${AI_BEDROCK_ENABLED:false}
     region: ${AWS_REGION:us-east-1}
-    model: anthropic.claude-3-sonnet-20240229-v1:0
-    max-tokens: 4096
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+    model: anthropic.claude-3-5-sonnet-20240620-v1:0
+    max-tokens: 1024
     temperature: 0.7
     timeout: 120
 
@@ -169,3 +165,11 @@ ai:
     model: ${OLLAMA_MODEL:llama3}
     timeout: 120
     temperature: 0.7
+
+
+  data:
+    redis:
+      host: localhost
+      port: 6380
+      repositories:
+        enabled: false  # Disable Redis repositories since we only use Redis for caching
