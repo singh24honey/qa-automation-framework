@@ -4,13 +4,17 @@ import com.company.qa.config.AIConfig;
 import com.company.qa.model.dto.*;
 import com.company.qa.model.enums.AIProvider;
 import com.company.qa.model.enums.AITaskType;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
@@ -18,21 +22,18 @@ import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
-import java.time.Duration;
+
 import java.time.Instant;
 
 /**
- * AWS Bedrock AI Service Implementation
+ * AWS Bedrock AI Service with multi-model support.
  *
- * Provides AI capabilities using AWS Bedrock with Claude models.
- * Implements the AIService interface for seamless provider switching.
- *
- * Required configuration:
- * - ai.provider=bedrock
- * - ai.bedrock.enabled=true
- * - AWS credentials (via environment or explicit config)
+ * Supports:
+ * - Amazon Nova 2 (Lite, Sonic, Pro, Premier)
+ * - Amazon Titan (Text Express, Text Lite)
+ * - Anthropic Claude (3 Haiku, 3 Sonnet, 3.5 Sonnet)
+ * - AI21 Jurassic
+ * - Meta Llama
  */
 @Service
 @Slf4j
@@ -44,8 +45,7 @@ public class BedrockAIService implements AIService {
     private final ObjectMapper objectMapper;
 
     private BedrockRuntimeClient bedrockClient;
-
-    // ========== Lifecycle Methods ==========
+    private ModelType modelType;
 
     @PostConstruct
     public void init() {
@@ -54,29 +54,23 @@ public class BedrockAIService implements AIService {
             return;
         }
 
+        String modelId = aiConfig.getBedrock().getModel();
+        this.modelType = detectModelType(modelId);
+
         log.info("Initializing AWS Bedrock AI Service");
         log.info("Region: {}", aiConfig.getBedrock().getRegion());
-        log.info("Model: {}", aiConfig.getBedrock().getModel());
+        log.info("Model: {} (Type: {})", modelId, modelType);
 
         try {
             AIConfig.BedrockConfig config = aiConfig.getBedrock();
 
-            // Check if credentials are provided
+            // Initialize client
             if (config.getAccessKeyId() == null || config.getAccessKeyId().isEmpty()) {
-                log.info("AWS credentials not provided. Using default credential chain.");
-
-                // Use default credential chain (IAM role, environment variables, etc.)
+                log.warn("AWS credentials not provided. Using default credential chain.");
                 bedrockClient = BedrockRuntimeClient.builder()
                         .region(Region.of(config.getRegion()))
-                        .credentialsProvider(DefaultCredentialsProvider.create())
-                        .overrideConfiguration(c -> c
-                                .apiCallTimeout(Duration.ofSeconds(config.getTimeout()))
-                                .apiCallAttemptTimeout(Duration.ofSeconds(config.getTimeout())))
                         .build();
             } else {
-                log.info("Using explicit AWS credentials");
-
-                // Use explicit credentials
                 AwsBasicCredentials awsCredentials = AwsBasicCredentials.create(
                         config.getAccessKeyId(),
                         config.getSecretAccessKey()
@@ -85,13 +79,10 @@ public class BedrockAIService implements AIService {
                 bedrockClient = BedrockRuntimeClient.builder()
                         .region(Region.of(config.getRegion()))
                         .credentialsProvider(StaticCredentialsProvider.create(awsCredentials))
-                        .overrideConfiguration(c -> c
-                                .apiCallTimeout(Duration.ofSeconds(config.getTimeout()))
-                                .apiCallAttemptTimeout(Duration.ofSeconds(config.getTimeout())))
                         .build();
             }
 
-            log.info("Bedrock client initialized successfully");
+            log.info("Bedrock client initialized successfully for {}", modelType);
 
             // Test connection
             if (isAvailable()) {
@@ -114,7 +105,34 @@ public class BedrockAIService implements AIService {
         }
     }
 
-    // ========== AIService Interface Implementation ==========
+    /**
+     * Detect model type from model ID
+     */
+    private ModelType detectModelType(String modelId) {
+        if (modelId.contains("nova")) {
+            return ModelType.AMAZON_NOVA;
+        } else if (modelId.contains("claude")) {
+            return ModelType.ANTHROPIC_CLAUDE;
+        } else if (modelId.contains("titan")) {
+            return ModelType.AMAZON_TITAN;
+        } else if (modelId.contains("ai21") || modelId.contains("jamba") || modelId.contains("jurassic")) {
+            return ModelType.AI21_JURASSIC;
+        } else if (modelId.contains("llama")) {
+            return ModelType.META_LLAMA;
+        } else {
+            log.warn("Unknown model type for: {}. Defaulting to AMAZON_NOVA", modelId);
+            return ModelType.AMAZON_NOVA;
+        }
+    }
+
+    private enum ModelType {
+        AMAZON_NOVA,
+        AMAZON_TITAN,
+        ANTHROPIC_CLAUDE,
+        AI21_JURASSIC,
+        META_LLAMA,
+        UNKNOWN
+    }
 
     @Override
     public AIProvider getProvider() {
@@ -128,34 +146,28 @@ public class BedrockAIService implements AIService {
         }
 
         try {
-            // Simple health check - try to invoke with minimal prompt
-            String testPrompt = "Reply with OK";
-            BedrockRequest request = BedrockRequest.createUserMessage(testPrompt, 10, 0.1);
-
-            String requestBody = objectMapper.writeValueAsString(request);
-            InvokeModelRequest invokeRequest = InvokeModelRequest.builder()
-                    .modelId(aiConfig.getBedrock().getModel())
-                    .body(SdkBytes.fromUtf8String(requestBody))
-                    .build();
-
-            InvokeModelResponse response = bedrockClient.invokeModel(invokeRequest);
-            return response.sdkHttpResponse().isSuccessful();
-
+            // Quick health check with minimal tokens
+            String testPrompt = "Hello";
+            AIResponse response = invokeModel(testPrompt, AITaskType.GENERAL, 10, 0.1);
+            return response.isSuccess();
         } catch (Exception e) {
-            log.debug("Bedrock health check failed: {}", e.getMessage());
+            log.error("Bedrock health check failed: {}", e.getMessage());
             return false;
         }
     }
 
+    // ========== AI Service Interface Methods ==========
+
     @Override
     public AIResponse generateTest(TestGenerationRequest request) {
-        log.info("Bedrock AI: Generating test for: {}", request.getDescription());
+        log.info("Bedrock AI [{}]: Generating test for: {}", modelType, request.getDescription());
 
         long startTime = System.currentTimeMillis();
 
         try {
             String prompt = buildTestGenerationPrompt(request);
 
+            // TestGenerationRequest doesn't have maxTokens/temperature, use config defaults
             AIResponse response = invokeModel(
                     prompt,
                     AITaskType.TEST_GENERATION,
@@ -171,7 +183,7 @@ public class BedrockAIService implements AIService {
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to generate test with Bedrock: {}", e.getMessage(), e);
+            log.error("Failed to generate test: {}", e.getMessage(), e);
             return AIResponse.error(
                     "Failed to generate test: " + e.getMessage(),
                     AIProvider.BEDROCK,
@@ -182,13 +194,14 @@ public class BedrockAIService implements AIService {
 
     @Override
     public AIResponse analyzeFailure(FailureAnalysisRequest request) {
-        log.info("Bedrock AI: Analyzing failure for test: {}", request.getTestName());
+        log.info("Bedrock AI [{}]: Analyzing failure for test: {}", modelType, request.getTestName());
 
         long startTime = System.currentTimeMillis();
 
         try {
             String prompt = buildFailureAnalysisPrompt(request);
 
+            // FailureAnalysisRequest doesn't have maxTokens/temperature, use config defaults
             AIResponse response = invokeModel(
                     prompt,
                     AITaskType.FAILURE_ANALYSIS,
@@ -203,7 +216,7 @@ public class BedrockAIService implements AIService {
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to analyze failure with Bedrock: {}", e.getMessage(), e);
+            log.error("Failed to analyze failure: {}", e.getMessage(), e);
             return AIResponse.error(
                     "Failed to analyze failure: " + e.getMessage(),
                     AIProvider.BEDROCK,
@@ -214,7 +227,7 @@ public class BedrockAIService implements AIService {
 
     @Override
     public AIResponse suggestFix(String testCode, String errorMessage) {
-        log.info("Bedrock AI: Suggesting fix for error");
+        log.info("Bedrock AI [{}]: Suggesting fix for error", modelType);
 
         long startTime = System.currentTimeMillis();
 
@@ -233,7 +246,7 @@ public class BedrockAIService implements AIService {
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to suggest fix with Bedrock: {}", e.getMessage(), e);
+            log.error("Failed to suggest fix: {}", e.getMessage(), e);
             return AIResponse.error(
                     "Failed to suggest fix: " + e.getMessage(),
                     AIProvider.BEDROCK,
@@ -244,7 +257,7 @@ public class BedrockAIService implements AIService {
 
     @Override
     public AIResponse execute(AIRequest request) {
-        log.info("Bedrock AI: Executing custom task: {}", request.getTaskType());
+        log.info("Bedrock AI [{}]: Executing custom task: {}", modelType, request.getTaskType());
 
         long startTime = System.currentTimeMillis();
 
@@ -271,7 +284,7 @@ public class BedrockAIService implements AIService {
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to execute custom task with Bedrock: {}", e.getMessage(), e);
+            log.error("Failed to execute custom task: {}", e.getMessage(), e);
             return AIResponse.error(
                     "Failed to execute task: " + e.getMessage(),
                     AIProvider.BEDROCK,
@@ -280,7 +293,7 @@ public class BedrockAIService implements AIService {
         }
     }
 
-    // ========== Private Helper Methods ==========
+    // ========== Model Invocation ==========
 
     private AIResponse invokeModel(String prompt, AITaskType taskType,
                                    Integer maxTokens, Double temperature) throws Exception {
@@ -289,57 +302,281 @@ public class BedrockAIService implements AIService {
             throw new IllegalStateException("Bedrock client not initialized");
         }
 
-        // Build request
-        BedrockRequest bedrockRequest = BedrockRequest.createUserMessage(
-                prompt, maxTokens, temperature);
+        String requestBody = buildRequestBody(prompt, maxTokens, temperature);
 
-        String requestBody = objectMapper.writeValueAsString(bedrockRequest);
+        log.debug("Invoking model: {} with request: {}", aiConfig.getBedrock().getModel(),
+                requestBody.substring(0, Math.min(200, requestBody.length())) + "...");
 
-        log.debug("Invoking Bedrock model: {}", aiConfig.getBedrock().getModel());
-        log.debug("Request: {}", requestBody);
-
-        // Invoke model
         InvokeModelRequest invokeRequest = InvokeModelRequest.builder()
                 .modelId(aiConfig.getBedrock().getModel())
+                .contentType("application/json")
+                .accept("application/json")
                 .body(SdkBytes.fromUtf8String(requestBody))
                 .build();
 
         InvokeModelResponse invokeResponse = bedrockClient.invokeModel(invokeRequest);
 
-        // Parse response
         String responseBody = invokeResponse.body().asUtf8String();
-        log.debug("Response: {}", responseBody);
+        log.debug("Response: {}", responseBody.substring(0, Math.min(500, responseBody.length())) + "...");
 
-        BedrockResponse bedrockResponse = objectMapper.readValue(
-                responseBody, BedrockResponse.class);
+        return parseResponse(responseBody, taskType);
+    }
 
-        // Build AI response
+    // ========== Request Building (Model-Specific) ==========
+
+    /**
+     * Build request body based on model type.
+     * Each model family has different request format.
+     */
+    private String buildRequestBody(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        switch (modelType) {
+            case AMAZON_NOVA:
+                return buildNovaRequest(prompt, maxTokens, temperature);
+
+            case AMAZON_TITAN:
+                return buildTitanRequest(prompt, maxTokens, temperature);
+
+            case AI21_JURASSIC:
+                return buildAI21Request(prompt, maxTokens, temperature);
+
+            case ANTHROPIC_CLAUDE:
+                return buildClaudeRequest(prompt, maxTokens, temperature);
+
+            case META_LLAMA:
+                return buildLlamaRequest(prompt, maxTokens, temperature);
+
+            default:
+                return buildNovaRequest(prompt, maxTokens, temperature);
+        }
+    }
+
+    /**
+     * Amazon Nova Request Format (Converse API)
+     * Used by: amazon.nova-2-lite-v1:0, nova-2-sonic, nova-pro, nova-premier
+     */
+    private String buildNovaRequest(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        ObjectNode requestNode = objectMapper.createObjectNode();
+
+        // Messages array with user message
+        ArrayNode messagesNode = requestNode.putArray("messages");
+        ObjectNode messageNode = messagesNode.addObject();
+        messageNode.put("role", "user");
+
+        ArrayNode contentNode = messageNode.putArray("content");
+        ObjectNode textNode = contentNode.addObject();
+        textNode.put("text", prompt);
+
+        // Inference configuration
+        ObjectNode inferenceConfig = requestNode.putObject("inferenceConfig");
+        inferenceConfig.put("max_new_tokens", maxTokens);
+        inferenceConfig.put("temperature", temperature);
+        inferenceConfig.put("top_p", 0.9);
+
+        return objectMapper.writeValueAsString(requestNode);
+    }
+
+    /**
+     * Amazon Titan Text Request Format
+     */
+    private String buildTitanRequest(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        ObjectNode requestNode = objectMapper.createObjectNode();
+        requestNode.put("inputText", prompt);
+
+        ObjectNode configNode = requestNode.putObject("textGenerationConfig");
+        configNode.put("maxTokenCount", maxTokens);
+        configNode.put("temperature", temperature);
+        configNode.put("topP", 0.9);
+        configNode.putArray("stopSequences");
+
+        return objectMapper.writeValueAsString(requestNode);
+    }
+
+    /**
+     * AI21 Jurassic Request Format
+     */
+    private String buildAI21Request(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        ObjectNode requestNode = objectMapper.createObjectNode();
+        requestNode.put("prompt", prompt);
+        requestNode.put("maxTokens", maxTokens);
+        requestNode.put("temperature", temperature);
+        requestNode.put("topP", 0.9);
+        requestNode.putArray("stopSequences");
+
+        return objectMapper.writeValueAsString(requestNode);
+    }
+
+    /**
+     * Anthropic Claude Request Format (Messages API)
+     */
+    private String buildClaudeRequest(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        ObjectNode requestNode = objectMapper.createObjectNode();
+        requestNode.put("anthropic_version", "bedrock-2023-05-31");
+        requestNode.put("max_tokens", maxTokens);
+        requestNode.put("temperature", temperature);
+
+        ArrayNode messagesNode = requestNode.putArray("messages");
+        ObjectNode messageNode = messagesNode.addObject();
+        messageNode.put("role", "user");
+        messageNode.put("content", prompt);
+
+        return objectMapper.writeValueAsString(requestNode);
+    }
+
+    /**
+     * Meta Llama Request Format
+     */
+    private String buildLlamaRequest(String prompt, Integer maxTokens, Double temperature) throws Exception {
+        ObjectNode requestNode = objectMapper.createObjectNode();
+        requestNode.put("prompt", prompt);
+        requestNode.put("max_gen_len", maxTokens);
+        requestNode.put("temperature", temperature);
+        requestNode.put("top_p", 0.9);
+
+        return objectMapper.writeValueAsString(requestNode);
+    }
+
+    // ========== Response Parsing (Model-Specific) ==========
+
+    /**
+     * Parse response based on model type.
+     * Each model family has different response format.
+     */
+    private AIResponse parseResponse(String responseBody, AITaskType taskType) throws Exception {
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+
+        String content;
+        int tokensUsed = 0;
+
+        switch (modelType) {
+            case AMAZON_NOVA:
+                content = parseNovaResponse(rootNode);
+                tokensUsed = extractNovaTokens(rootNode);
+                break;
+
+            case AMAZON_TITAN:
+                content = parseTitanResponse(rootNode);
+                tokensUsed = extractTitanTokens(rootNode);
+                break;
+
+            case AI21_JURASSIC:
+                content = parseAI21Response(rootNode);
+                tokensUsed = extractAI21Tokens(rootNode);
+                break;
+
+            case ANTHROPIC_CLAUDE:
+                content = parseClaudeResponse(rootNode);
+                tokensUsed = extractClaudeTokens(rootNode);
+                break;
+
+            case META_LLAMA:
+                content = parseLlamaResponse(rootNode);
+                tokensUsed = extractLlamaTokens(rootNode);
+                break;
+
+            default:
+                content = parseNovaResponse(rootNode);
+                tokensUsed = extractNovaTokens(rootNode);
+        }
+
         return AIResponse.builder()
                 .success(true)
-                .content(bedrockResponse.getTextContent())
-                .taskType(taskType)
+                .content(content)
                 .provider(AIProvider.BEDROCK)
-                .tokensUsed(bedrockResponse.getTotalTokens())
+                .taskType(taskType)
+                .tokensUsed(tokensUsed)
                 .generatedAt(Instant.now())
                 .build();
     }
 
+    // Nova parsing
+    private String parseNovaResponse(JsonNode rootNode) {
+        JsonNode outputNode = rootNode.path("output").path("message");
+        if (!outputNode.isMissingNode()) {
+            JsonNode contentArray = outputNode.path("content");
+            if (contentArray.isArray() && contentArray.size() > 0) {
+                return contentArray.get(0).path("text").asText("");
+            }
+        }
+        return "";
+    }
+
+    private int extractNovaTokens(JsonNode rootNode) {
+        JsonNode usageNode = rootNode.path("usage");
+        int inputTokens = usageNode.path("inputTokens").asInt(0);
+        int outputTokens = usageNode.path("outputTokens").asInt(0);
+        return inputTokens + outputTokens;
+    }
+
+    // Titan parsing
+    private String parseTitanResponse(JsonNode rootNode) {
+        JsonNode resultsNode = rootNode.path("results");
+        if (resultsNode.isArray() && resultsNode.size() > 0) {
+            return resultsNode.get(0).path("outputText").asText("");
+        }
+        return "";
+    }
+
+    private int extractTitanTokens(JsonNode rootNode) {
+        return rootNode.path("inputTextTokenCount").asInt(0) +
+                rootNode.path("results").path(0).path("tokenCount").asInt(0);
+    }
+
+    // AI21 parsing
+    private String parseAI21Response(JsonNode rootNode) {
+        JsonNode completionsNode = rootNode.path("completions");
+        if (completionsNode.isArray() && completionsNode.size() > 0) {
+            return completionsNode.get(0).path("data").path("text").asText("");
+        }
+        return "";
+    }
+
+    private int extractAI21Tokens(JsonNode rootNode) {
+        return rootNode.path("prompt").path("tokens").size() +
+                rootNode.path("completions").path(0).path("data").path("tokens").size();
+    }
+
+    // Claude parsing
+    private String parseClaudeResponse(JsonNode rootNode) {
+        JsonNode contentNode = rootNode.path("content");
+        if (contentNode.isArray() && contentNode.size() > 0) {
+            return contentNode.get(0).path("text").asText("");
+        }
+        return "";
+    }
+
+    private int extractClaudeTokens(JsonNode rootNode) {
+        JsonNode usageNode = rootNode.path("usage");
+        return usageNode.path("input_tokens").asInt(0) +
+                usageNode.path("output_tokens").asInt(0);
+    }
+
+    // Llama parsing
+    private String parseLlamaResponse(JsonNode rootNode) {
+        return rootNode.path("generation").asText("");
+    }
+
+    private int extractLlamaTokens(JsonNode rootNode) {
+        return rootNode.path("prompt_token_count").asInt(0) +
+                rootNode.path("generation_token_count").asInt(0);
+    }
+
+    // ========== Prompt Building ==========
+
     private String buildTestGenerationPrompt(TestGenerationRequest request) {
         return String.format("""
-                You are an expert test automation engineer.
                 Generate a %s test in %s for the following scenario:
                 
                 Description: %s
                 Target URL: %s
                 
                 Requirements:
-                - Use Page Object Model pattern
-                - Include proper waits and assertions
-                - Add meaningful comments
-                - Handle potential failures gracefully
-                - Follow best practices for %s
+                1. Use %s framework
+                2. Include proper page object pattern
+                3. Add assertions
+                4. Handle waits and synchronization
+                5. Include error handling
                 
-                Return ONLY the code, no explanations.
+                Generate only the test code, no explanations.
                 """,
                 request.getFramework(),
                 request.getLanguage(),
@@ -351,33 +588,33 @@ public class BedrockAIService implements AIService {
 
     private String buildFailureAnalysisPrompt(FailureAnalysisRequest request) {
         return String.format("""
-            You are an expert test automation engineer analyzing a test failure.
-            
-            Test Name: %s
-            Error Message: %s
-            Stack Trace: %s
-            
-            Test Code:
-            %s
-            
-            Please provide:
-            1. Root cause analysis
-            2. Probable causes (ranked by likelihood)
-            3. Specific recommendations to fix
-            4. Prevention strategies for future
-            
-            Format your response as a structured analysis with clear sections.
-            """,
+                Analyze this test failure:
+                
+                Test Name: %s
+                Error Message: %s
+                Stack Trace:
+                %s
+                
+                Test Code:
+                %s
+                
+                Provide:
+                1. Root cause analysis
+                2. Affected components
+                3. Recommended fixes
+                4. Prevention strategies
+                
+                Be specific and actionable.
+                """,
                 request.getTestName(),
                 request.getErrorMessage(),
-                request.getStackTrace() != null ? request.getStackTrace() : "Not available",
-                request.getTestCode() != null ? request.getTestCode() : "Not available"
+                request.getStackTrace(),
+                request.getTestCode()
         );
     }
 
     private String buildFixSuggestionPrompt(String testCode, String errorMessage) {
         return String.format("""
-                You are an expert test automation engineer.
                 A test is failing with the following error:
                 
                 Error: %s
