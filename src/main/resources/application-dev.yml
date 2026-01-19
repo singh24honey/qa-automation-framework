@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5433/qa_framework
+    url: jdbc:postgresql://${DB_HOST:localhost}:5433/qa_framework
     username: qauser
     password: qapass
     hikari:
@@ -10,7 +10,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
@@ -48,7 +48,7 @@ storage:
 
 # Selenium configuration
 selenium:
-  grid-url: http://localhost:4444/wd/hub
+  grid-url: http://${SELENIUM_HOST:localhost}:4444/wd/hub
   implicit-wait: 10
   page-load-timeout: 30
 
@@ -159,12 +159,14 @@ ai:
     temperature: 0.7
     timeout: 120
 
+  # ADD THIS SECTION
   ollama:
-    enabled: true
-    url: ${OLLAMA_URL:http://localhost:11434}
-    model: ${OLLAMA_MODEL:llama3}
-    timeout: 120
+    enabled: ${OLLAMA_ENABLED:true}
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llama3.2:latest"}
+    max-tokens: 4096
     temperature: 0.7
+    timeout-seconds: 120
 
 
   data:

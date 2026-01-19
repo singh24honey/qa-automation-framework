@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   - us.amazon.nova-pro-v1:0 (highest quality)
  *   - anthropic.claude-3-sonnet-20240229-v1:0 (if marketplace approved)
  */
+@ActiveProfiles("dev")
 class BedrockAIServiceTest {
 
     private AIConfig aiConfig;
@@ -57,8 +59,8 @@ class BedrockAIServiceTest {
         bedrockConfig.setTemperature(0.7);
 
         // Get credentials from environment
-        bedrockConfig.setAccessKeyId(System.getenv("AWS_ACCESS_KEY_ID"));
-        bedrockConfig.setSecretAccessKey(System.getenv("AWS_SECRET_ACCESS_KEY"));
+        bedrockConfig.setAccessKeyId("AKIAWSTSBPYDSFTZSOVC");
+        bedrockConfig.setSecretAccessKey("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");
 
         aiConfig.setBedrock(bedrockConfig);
 
@@ -138,10 +140,8 @@ class BedrockAIServiceTest {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = "AWS_ACCESS_KEY_ID", matches = ".+")
-    @EnabledIfEnvironmentVariable(named = "AWS_SECRET_ACCESS_KEY", matches = ".+")
     @DisplayName("Should analyze failure with real Bedrock")
-    void analyzeFailure_WithRealBedrock_ReturnsAnalysis() {
+     void analyzeFailure_WithRealBedrock_ReturnsAnalysis() {
         // Given
         assertThat(aiService.isAvailable()).isTrue();
 

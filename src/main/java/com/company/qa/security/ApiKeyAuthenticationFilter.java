@@ -1,5 +1,6 @@
 package com.company.qa.security;
 
+import com.company.qa.event.RequestLoggedEvent;
 import com.company.qa.model.entity.ApiKey;
 import com.company.qa.service.ApiKeyService;
 import com.company.qa.service.RequestLogService;
@@ -10,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,7 +20,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Collections;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -31,6 +35,10 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
     private final ApiKeyService apiKeyService;
     private final RequestLogService requestLogService;
+    //public RequestLoggedEvent eventPublisher;
+
+    private final ApplicationEventPublisher eventPublisher;
+
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -94,25 +102,41 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             apiKeyService.updateLastUsed(apiKey.getId());
 
             // Continue filter chain
-            filterChain.doFilter(request, response);
+            try {
+                filterChain.doFilter(request, response);
+            }finally {
 
-            // Log request (async)
-            long responseTime = System.currentTimeMillis() - startTime;
-            String ipAddress = SecurityUtils.getClientIpAddress(
-                    request.getHeader("X-Forwarded-For"),
-                    request.getRemoteAddr()
-            );
 
-            requestLogService.logRequest(
-                    apiKey.getId(),
-                    request.getMethod(),
-                    requestPath,
-                    ipAddress,
-                    request.getHeader("User-Agent"),
-                    response.getStatus(),
-                    (int) responseTime
-            );
+                // Log request (async)
+                long responseTime = System.currentTimeMillis() - startTime;
+                String ipAddress = SecurityUtils.getClientIpAddress(
+                        request.getHeader("X-Forwarded-For"),
+                        request.getRemoteAddr()
+                );
 
+                Integer responseTimeMs = Math.toIntExact(System.currentTimeMillis() - startTime);
+
+
+                UUID apiKeyId = apiKey.getId();
+                String endpoint = request.getRequestURI();
+                String method = request.getMethod();
+                String userAgent = request.getHeader("User-Agent");
+                int statusCode = response.getStatus();
+
+                eventPublisher.publishEvent(
+                        new RequestLoggedEvent(
+                                apiKeyId,
+                                endpoint,
+                                method,
+                                ipAddress,
+                                userAgent,
+                                statusCode,
+                                responseTimeMs,
+                                Instant.now()
+                        )
+                );
+
+            }
         } catch (Exception e) {
             log.error("Error in API key filter: {}", e.getMessage(), e);
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);

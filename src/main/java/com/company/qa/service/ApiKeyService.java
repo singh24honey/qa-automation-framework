@@ -1,5 +1,6 @@
 package com.company.qa.service;
 
+import com.company.qa.event.ApiKeyCreatedEvent;
 import com.company.qa.exception.ResourceNotFoundException;
 import com.company.qa.model.dto.ApiKeyDto;
 import com.company.qa.model.dto.CreateApiKeyRequest;
@@ -8,6 +9,7 @@ import com.company.qa.repository.ApiKeyRepository;
 import com.company.qa.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,9 @@ import java.util.stream.Collectors;
 public class ApiKeyService {
 
     private final ApiKeyRepository apiKeyRepository;
+
+
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ApiKeyDto createApiKey(CreateApiKeyRequest request) {
@@ -51,6 +56,8 @@ public class ApiKeyService {
         ApiKey saved = apiKeyRepository.save(apiKey);
         log.info("Created API key with id: {}", saved.getId());
 
+        eventPublisher.publishEvent(
+                new ApiKeyCreatedEvent(saved.getId()));
         // Return DTO with the actual key value (only time it's shown)
         return toDto(saved, true);
     }

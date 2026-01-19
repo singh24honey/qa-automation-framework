@@ -70,7 +70,7 @@ public class AIConfig {
     public static class OllamaConfig {
         private boolean enabled = false;
         private String baseUrl = "http://localhost:11434";
-        private String model = "codellama";
+        private String model = "llama3.2:latest";
         private Integer maxTokens = 4096;
         private Double temperature = 0.7;
         private Integer timeout = 120; // seconds

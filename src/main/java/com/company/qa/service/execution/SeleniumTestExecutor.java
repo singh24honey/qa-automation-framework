@@ -5,8 +5,11 @@ import com.company.qa.model.dto.RetryConfig;
 import com.company.qa.model.dto.TestScript;
 import com.company.qa.model.dto.TestStep;
 import com.company.qa.service.storage.FileStorageService;
+import jakarta.persistence.Column;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.openqa.selenium.*;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -272,8 +275,9 @@ public class SeleniumTestExecutor {
         private Long startTime;
         private Long endTime;
         private Integer durationMs;
-        private List<String> screenshotUrls;
-        private String logUrl;
+        @JdbcTypeCode(SqlTypes.JSON)
+        @Column(columnDefinition = "json")
+        private List<String> screenshotUrls;        private String logUrl;
         private RetryConfig retryConfig;                    // ADD THIS
         private FailureAnalysis failureAnalysis;            // ADD THIS
         private List<FailureAnalysis> failureHistory;

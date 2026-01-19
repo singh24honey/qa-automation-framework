@@ -1,5 +1,6 @@
 package com.company.qa.service;
 
+import com.company.qa.event.RequestLoggedEvent;
 import com.company.qa.model.entity.RequestLog;
 import com.company.qa.repository.RequestLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -7,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -20,11 +23,9 @@ public class RequestLogService {
     private final RequestLogRepository requestLogRepository;
 
     @Async
-    @Transactional
-    public void logRequest(UUID apiKeyId, String method, String endpoint,
-                           String ipAddress, String userAgent,
-                           Integer statusCode, Integer responseTimeMs) {
-        RequestLog requestLog = RequestLog.builder()
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void logRequest(RequestLoggedEvent event) {
+       /* RequestLog requestLog = RequestLog.builder()
                 .apiKeyId(apiKeyId)
                 .method(method)
                 .endpoint(endpoint)
@@ -34,7 +35,20 @@ public class RequestLogService {
                 .responseTimeMs(responseTimeMs)
                 .build();
 
-        requestLogRepository.save(requestLog);
+        requestLogRepository.save(requestLog);*/
+
+        RequestLog logEntity = RequestLog.builder()
+                .apiKeyId(event.apiKeyId())
+                .endpoint(event.endpoint())
+                .method(event.method())
+                .ipAddress(event.ipAddress())
+                .userAgent(event.userAgent())
+                .statusCode(event.statusCode())
+                .responseTimeMs(event.responseTimeMs())
+                .createdAt(event.createdAt())
+                .build();
+
+        requestLogRepository.save(logEntity);
     }
 
     @Transactional(readOnly = true)
