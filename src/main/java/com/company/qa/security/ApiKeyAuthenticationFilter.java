@@ -18,6 +18,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -123,14 +125,14 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
                 String userAgent = request.getHeader("User-Agent");
                 int statusCode = response.getStatus();
 
-                eventPublisher.publishEvent(
+                requestLogService.handle(
                         new RequestLoggedEvent(
-                                apiKeyId,
-                                endpoint,
-                                method,
+                                apiKey.getId(),
+                                request.getRequestURI(),
+                                request.getMethod(),
                                 ipAddress,
-                                userAgent,
-                                statusCode,
+                                request.getHeader("User-Agent"),
+                                response.getStatus(),
                                 responseTimeMs,
                                 Instant.now()
                         )

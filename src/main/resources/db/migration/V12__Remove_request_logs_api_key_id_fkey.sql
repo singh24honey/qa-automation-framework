@@ -1,0 +1,2 @@
+ALTER TABLE request_logs
+DROP CONSTRAINT request_logs_api_key_id_fkey;
