@@ -93,6 +93,8 @@ dependencies {
 
     // JSON processing for Bedrock
     implementation 'org.json:json:20231013'  // Updated to newer version
+    implementation platform("software.amazon.awssdk:bom:2.25.29")
+    implementation "software.amazon.awssdk:eventbridge:2.25.15"
 }
 
 tasks.named('test') {

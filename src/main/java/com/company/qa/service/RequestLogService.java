@@ -1,8 +1,10 @@
 package com.company.qa.service;
 
+import com.company.qa.config.RequestLoggingProperties;
 import com.company.qa.event.RequestLoggedEvent;
 import com.company.qa.model.entity.RequestLog;
 import com.company.qa.repository.RequestLogRepository;
+import com.company.qa.service.eventbridge.EventBridgePublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,41 +27,53 @@ import java.util.UUID;
 public class RequestLogService {
 
     private final RequestLogRepository requestLogRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final EventBridgePublisher eventBridgePublisher;
+    private final RequestLoggingProperties props;
 
-    @Value("${logging.request.mode:postgres}")
-    private String mode;
+
 
     /**
-     * Persist request log to database
+     * Single async entry point for request logging
      */
-    @Transactional
-    public void logToDatabase(RequestLog entity) {
-        requestLogRepository.save(entity);
+    @Async
+    @EventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(RequestLoggedEvent event) {
+
+        try {
+            switch (props.getMode()) {
+
+                case "postgres" -> persist(event);
+
+                case "eventbridge" -> {
+                    // STEP 3: real EventBridge publisher
+                    publish(event);
+                    log.info("[EventBridge] Publishing request event {}", event.apiKeyId());
+                }
+
+                case "hybrid" -> {
+                    persist(event);
+                    publish(event);
+                    log.info("[EventBridge] Publishing request event {}", event.apiKeyId());
+                }
+
+                default -> {
+                    log.warn("Unknown logging mode '{}', defaulting to postgres", props.getMode());
+                    persist(event);
+                }
+            }
+        } catch (Exception e) {
+            // IMPORTANT: logging must never break requests
+            log.error("Request logging failed", e);
+        }
     }
 
     /**
-     * Publish domain event (no DB dependency)
+     * DB persistence (SYNC, transactional)
      */
-    public void publishEvent(RequestLoggedEvent event) {
-        eventPublisher.publishEvent(event);
-    }
-   // @Async
-    //@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void logRequest(RequestLoggedEvent event) {
-       /* RequestLog requestLog = RequestLog.builder()
-                .apiKeyId(apiKeyId)
-                .method(method)
-                .endpoint(endpoint)
-                .ipAddress(ipAddress)
-                .userAgent(userAgent)
-                .statusCode(statusCode)
-                .responseTimeMs(responseTimeMs)
-                .build();
+    private void persist(RequestLoggedEvent event) {
 
-        requestLogRepository.save(requestLog);*/
-
-       /* RequestLog logEntity = RequestLog.builder()
+        RequestLog entity = RequestLog.builder()
                 .apiKeyId(event.apiKeyId())
                 .endpoint(event.endpoint())
                 .method(event.method())
@@ -68,63 +82,23 @@ public class RequestLogService {
                 .statusCode(event.statusCode())
                 .responseTimeMs(event.responseTimeMs())
                 .createdAt(event.createdAt())
-                .build();*/
+                .build();
 
-        //requestLogRepository.save(logEntity);
-
-    }
-    @Async
-    @EventListener
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void handle(RequestLoggedEvent event) {
-
-        switch (mode) {
-
-            case "postgres" -> saveToDatabase(event);
-
-            case "eventbridge" -> {
-                // later: send to EventBridge
-                log.info("EventBridge logging enabled, skipping DB");
-            }
-
-            case "hybrid" -> {
-                saveToDatabase(event);
-                log.info("EventBridge logging enabled");
-            }
-
-            default -> {
-                log.warn("Unknown mode {}, defaulting to postgres", mode);
-                saveToDatabase(event);
-            }
-        }
+        requestLogRepository.save(entity);
+        log.debug("Request log persisted");
     }
 
-
-    @Async
-    void saveToDatabase(RequestLoggedEvent event) {
-        try {
-            RequestLog entity = RequestLog.builder()
-                    .apiKeyId(event.apiKeyId())
-                    .endpoint(event.endpoint())
-                    .method(event.method())
-                    .ipAddress(event.ipAddress())
-                    .userAgent(event.userAgent())
-                    .statusCode(event.statusCode())
-                    .responseTimeMs(event.responseTimeMs())
-                    .createdAt(event.createdAt())
-                    .build();
-
-            requestLogRepository.save(entity);
-            log.debug("Request log persisted");
-        } catch (Exception e) {
-            log.error("Failed to persist request log", e);
-        }
-    }
-
-
+    /**
+     * Used by rate limiter — MUST stay synchronous
+     */
     @Transactional(readOnly = true)
     public long getRequestCount(UUID apiKeyId, int minutes) {
         Instant since = Instant.now().minus(minutes, ChronoUnit.MINUTES);
         return requestLogRepository.countByApiKeyIdAndCreatedAtAfter(apiKeyId, since);
+    }
+
+    private void publish(RequestLoggedEvent event) {
+       // eventBridgePublisher.ifPresent(p -> p.publish(event));
+         eventBridgePublisher.publish(event);
     }
 }

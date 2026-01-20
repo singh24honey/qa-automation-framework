@@ -34,3 +34,7 @@ logging:
     name: ${user.home}/qa-framework/artifacts/logs/application.log
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+  logging:
+    request:
+      mode: postgres    # postgres | eventbridge | hybrid

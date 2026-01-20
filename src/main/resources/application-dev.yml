@@ -169,9 +169,19 @@ ai:
     timeout-seconds: 120
 
 
-  data:
-    redis:
-      host: localhost
-      port: 6380
-      repositories:
-        enabled: false  # Disable Redis repositories since we only use Redis for caching
+data:
+  redis:
+    host: localhost
+    port: 6380
+    repositories:
+      enabled: false  # Disable Redis repositories since we only use Redis for caching
+
+log:
+  request:
+    mode: hybrid    # postgres | eventbridge | hybrid
+
+aws:
+  eventbridge:
+    enabled: true
+    bus-name: default
+    source: qa-framework.api
