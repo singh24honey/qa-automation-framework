@@ -172,9 +172,9 @@ ai:
 data:
   redis:
     host: localhost
-    port: 6380
+    port: 6379
     repositories:
-      enabled: false  # Disable Redis repositories since we only use Redis for caching
+      enabled: true  # Disable Redis repositories since we only use Redis for caching
 
 log:
   request:

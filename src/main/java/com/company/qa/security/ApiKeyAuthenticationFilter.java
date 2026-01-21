@@ -151,6 +151,9 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
                 path.startsWith("/actuator/info") ||
                 path.startsWith("/swagger-ui") ||
                 path.startsWith("/api/v1/auth/api-keys") ||
+                path.startsWith("/h2-console") ||
+                path.startsWith("/apple-touch-icon") ||
+                path.startsWith("/favicon") ||
                 path.startsWith("/v3/api-docs");
     }
 }

@@ -38,8 +38,8 @@ public class SecurityConfig {
                 // Configure authorization
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info","/apple-touch-icon","/favicon").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**","/h2-console").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/api-keys").permitAll()
 
                         // All other endpoints require authentication

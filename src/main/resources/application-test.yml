@@ -66,3 +66,9 @@ execution:
     retry-on-timeout: true
     retry-on-network-error: true
     retry-on-assertion-failure: false
+
+
+redis:
+  host: localhost
+  port: 6380  # Your Docker Redis port
+  timeout: 2000ms
