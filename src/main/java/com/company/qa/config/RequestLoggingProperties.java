@@ -9,5 +9,5 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "logging.request")
 public class RequestLoggingProperties {
 
-    private String mode = "hybrid";
+    private String mode = "postgres"; // Default to 'postgres'
 }

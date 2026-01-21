@@ -2,6 +2,7 @@ package com.company.qa.service.ai;
 
 import com.company.qa.model.dto.*;
 import com.company.qa.model.enums.UserRole;
+import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
 import com.company.qa.service.security.DataSanitizerService;
 import com.company.qa.service.security.RateLimiterService;
@@ -43,6 +44,8 @@ class AIGatewayServiceTest {
 
     private AIGatewayService gatewayService;
 
+    private  ApprovalRequestService approvalRequestService;
+
     @BeforeEach
     void setUp() {
         gatewayService = new AIGatewayService(
@@ -50,7 +53,8 @@ class AIGatewayServiceTest {
                 sanitizerService,
                 rateLimiterService,
                 responseValidator,
-                auditLogService
+                auditLogService,
+                approvalRequestService
         );
     }
 

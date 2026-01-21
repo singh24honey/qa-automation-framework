@@ -1,7 +1,9 @@
 package com.company.qa.service.ai;
 
 import com.company.qa.model.dto.*;
+import com.company.qa.model.enums.ApprovalRequestType;
 import com.company.qa.model.enums.UserRole;
+import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
 import com.company.qa.service.security.DataSanitizerService;
 import com.company.qa.service.security.RateLimiterService;
@@ -13,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -36,6 +39,8 @@ public class AIGatewayService {
     private final RateLimiterService rateLimiterService;
     private final ResponseValidator responseValidator;
     private final AuditLogService auditLogService;
+    // Add this field to AIGatewayService
+    private final ApprovalRequestService approvalRequestService;
 
     /**
      * Generate a test through the secure gateway.
@@ -290,5 +295,132 @@ public class AIGatewayService {
                 .errorMessage(message)
                 .timestamp(Instant.now())
                 .build();
+    }
+
+
+
+    /**
+     * Generate test with approval workflow.
+     * Creates an approval request instead of returning test directly.
+     */
+    public SecureAIResponse generateTestWithApproval(SecureAIRequest request) {
+        log.info("Secure AI Gateway: Test generation with approval workflow for user {}",
+                request.getUserId());
+
+        UUID requestId = UUID.randomUUID();
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // Step 1: Check rate limits
+            RateLimitResult rateLimitResult = rateLimiterService.checkRateLimit(
+                    request.getUserId(), request.getUserRole());
+
+            if (!rateLimitResult.allowed()) {
+                log.warn("Rate limit exceeded for user {}", request.getUserId());
+                auditLogService.logRateLimitExceeded(requestId, request.getUserId(),
+                        "test_generation_approval", rateLimitResult.remainingRequests(),
+                        rateLimitResult.resetTime());
+                return createRateLimitResponse(requestId, rateLimitResult);
+            }
+
+            // Step 2: Sanitize input
+            SanitizationResult sanitizationResult = sanitizerService.sanitize(
+                    SanitizationRequest.builder()
+                            .content(request.getContent())
+                            .userId(request.getUserId())
+                            .context("test_generation")
+                            .strictMode(request.isStrictMode())
+                            .build());
+
+            if (sanitizationResult.isShouldBlock()) {
+                log.warn("Request blocked due to sensitive data for user {}", request.getUserId());
+                auditLogService.logBlockedRequest(requestId, request.getUserId(),
+                        "test_generation_approval", "Sensitive data detected", sanitizationResult);
+                return createBlockedResponse(requestId,
+                        "Request contains sensitive data that cannot be processed");
+            }
+
+            // Step 3: Call AI service with sanitized content
+            TestGenerationRequest aiRequest = TestGenerationRequest.builder()
+                    .description(sanitizationResult.getSanitizedContent())
+                    .framework(request.getFramework())
+                    .language(request.getLanguage())
+                    .targetUrl(request.getTargetUrl())
+                    .build();
+
+            AIResponse aiResponse = aiService.generateTest(aiRequest);
+
+            // Step 4: Validate response
+            ValidationResult validationResult = responseValidator.validate(
+                    aiResponse.getContent(), ResponseType.TEST_CODE);
+
+            if (!validationResult.isValid() || validationResult.isShouldBlock()) {
+                log.warn("AI response failed validation for user {}", request.getUserId());
+                auditLogService.logValidationFailure(requestId, request.getUserId(),
+                        "test_generation_approval", validationResult);
+                return createValidationFailedResponse(requestId, validationResult);
+            }
+
+            // Step 5: Record usage
+            rateLimiterService.recordTokenUsage(request.getUserId(), aiResponse.getTokensUsed());
+            double estimatedCost = calculateCost(aiResponse.getTokensUsed());
+            rateLimiterService.recordCost(request.getUserId(), estimatedCost);
+
+            // Step 6: Create approval request instead of returning directly
+            CreateApprovalRequestDTO approvalRequest = CreateApprovalRequestDTO.builder()
+                    .requestType(ApprovalRequestType.TEST_GENERATION)
+                    .generatedContent(aiResponse.getContent())
+                    .aiResponseMetadata(Map.of(
+                            "tokensUsed", aiResponse.getTokensUsed(),
+                            "provider", aiResponse.getProvider().name(),
+                            "taskType", aiResponse.getTaskType().name(),
+                            "estimatedCost", estimatedCost
+                    ))
+                    .testName(extractTestName(request.getContent()))
+                    .testFramework(request.getFramework())
+                    .testLanguage(request.getLanguage())
+                    .targetUrl(request.getTargetUrl())
+                    .requestedById(request.getUserId())
+                    .requestedByName(request.getUserRole().name()) // TODO: Get actual user name
+                    .requestedByEmail(null) // TODO: Get from user context
+                    .autoExecuteOnApproval(false) // Default: manual execution
+                    .expirationDays(7)
+                    .sanitizationApplied(sanitizationResult.isDataRedacted())
+                    .redactionCount(sanitizationResult.getTotalRedactionCount())
+                    .build();
+
+            ApprovalRequestDTO approval = approvalRequestService.createApprovalRequest(approvalRequest);
+
+            // Step 7: Log success
+            long duration = System.currentTimeMillis() - startTime;
+            auditLogService.logSuccessfulRequest(requestId, request.getUserId(),
+                    "test_generation_approval", sanitizationResult, aiResponse, duration);
+
+            // Step 8: Return response indicating approval required
+            return SecureAIResponse.builder()
+                    .requestId(requestId)
+                    .success(true)
+                    .content("Test generated successfully. Awaiting approval. Approval Request ID: " +
+                            approval.getId())
+                    .tokensUsed(aiResponse.getTokensUsed())
+                    .estimatedCost(estimatedCost)
+                    .sanitizationApplied(sanitizationResult.isDataRedacted())
+                    .redactionCount(sanitizationResult.getTotalRedactionCount())
+                    .validationPassed(true)
+                    .processingTimeMs(duration)
+                    .timestamp(Instant.now())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error in AI Gateway: {}", e.getMessage(), e);
+            auditLogService.logError(requestId, request.getUserId(),
+                    "test_generation_approval", e.getMessage());
+            return createErrorResponse(requestId, "An error occurred processing your request");
+        }
+    }
+
+    private String extractTestName(String content) {
+        // Simple extraction - just take first 50 chars
+        return content.length() > 50 ? content.substring(0, 50) + "..." : content;
     }
 }

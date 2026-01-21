@@ -33,4 +33,5 @@ public class NotificationRequest {
 
     // Webhook specific
     private String webhookUrl;
+    private String content;
 }
