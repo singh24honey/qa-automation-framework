@@ -1,69 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import apiService from './services/apiService';
+import PendingApprovals from './components/approvals/PendingApprovals';
+import ApprovalDetail from './components/approvals/ApprovalDetail';
+import ApprovalStatistics from './components/approvals/ApprovalStatistics';
+import Navigation from './components/Navigation';
 import './App.css';
 
 function App() {
-  const [apiKey, setApiKey] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    // Check if API key exists in localStorage
-    const storedKey = localStorage.getItem('apiKey');
-    if (storedKey) {
-      setApiKey(storedKey);
-      setIsAuthenticated(true);
-    }
-  }, []);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (apiKey.trim()) {
-      apiService.setApiKey(apiKey);
-      setIsAuthenticated(true);
-    }
-  };
-
-  const handleLogout = () => {
-    apiService.clearApiKey();
-    setApiKey('');
-    setIsAuthenticated(false);
-  };
-
-  if (!isAuthenticated) {
-    return (
-      <div className="login-container">
-        <div className="login-box">
-          <h1>QA Dashboard</h1>
-          <p>Enter your API key to continue</p>
-          <form onSubmit={handleLogin}>
-            <input
-              type="text"
-              placeholder="Enter API Key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="api-key-input"
-            />
-            <button type="submit" className="btn-login">
-              Login
-            </button>
-          </form>
-        </div>
-      </div>
+    const [isAuthenticated, setIsAuthenticated] = useState(
+        () => localStorage.getItem('apiKey') !== null
     );
-  }
 
-  return (
-    <div className="App">
-      <nav className="app-nav">
-        <div className="nav-brand">QA Automation Framework</div>
-        <button onClick={handleLogout} className="btn-logout">
-          Logout
-        </button>
-      </nav>
-      <Dashboard />
-    </div>
-  );
+    const handleLogin = (apiKey) => {
+        localStorage.setItem('apiKey', apiKey);
+        setIsAuthenticated(true);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('apiKey');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('userName');
+        localStorage.removeItem('userEmail');
+        setIsAuthenticated(false);
+    };
+
+    if (!isAuthenticated) {
+        return <Login onLogin={handleLogin} />;
+    }
+
+    return (
+        <Router>
+            <div className="app">
+                <Navigation onLogout={handleLogout} />
+                <div className="app-content">
+                    <Routes>
+                        <Route path="/" element={<Dashboard />} />
+
+                        {/* ⭐ NEW APPROVAL ROUTES */}
+                        <Route path="/approvals" element={<PendingApprovals />} />
+                        <Route path="/approvals/:id" element={<ApprovalDetail />} />
+                        <Route path="/approval-stats" element={<ApprovalStatistics />} />
+
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </div>
+            </div>
+        </Router>
+    );
 }
 
 export default App;

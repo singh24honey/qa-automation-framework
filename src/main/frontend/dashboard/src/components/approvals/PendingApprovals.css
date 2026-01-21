@@ -1,0 +1,198 @@
+.pending-approvals {
+    padding: 24px;
+}
+
+.pending-approvals-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.pending-approvals-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #333;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.btn-refresh {
+    padding: 8px 16px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.btn-refresh:hover {
+    background: #f8f9fa;
+    border-color: #999;
+}
+
+.count-badge {
+    background: #007bff;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.approvals-table-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.approvals-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.approvals-table thead {
+    background: #f8f9fa;
+}
+
+.approvals-table th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    font-size: 14px;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.approvals-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.approvals-table th.sortable:hover {
+    background: #e9ecef;
+}
+
+.approvals-table td {
+    padding: 16px;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 14px;
+}
+
+.approval-row:hover {
+    background: #f8f9fa;
+}
+
+.test-name {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.sanitized-badge {
+    display: inline-block;
+    font-size: 11px;
+    background: #ffc107;
+    color: #000;
+    padding: 2px 8px;
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
+.requester-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.requester-name {
+    font-weight: 500;
+    color: #333;
+}
+
+.requester-email {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.expires-soon {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.framework-badge {
+    background: #e9ecef;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #495057;
+}
+
+.btn-review {
+    padding: 6px 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.btn-review:hover {
+    background: #0056b3;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: white;
+    border-radius: 8px;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    margin: 0 0 8px 0;
+    color: #333;
+}
+
+.empty-state p {
+    margin: 0;
+    color: #6c757d;
+}
+
+.loading, .error {
+    text-align: center;
+    padding: 40px;
+    background: white;
+    border-radius: 8px;
+    color: #6c757d;
+}
+
+.error {
+    color: #dc3545;
+}
+
+.btn-retry {
+    margin-top: 16px;
+    padding: 8px 24px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-retry:hover {
+    background: #0056b3;
+}
