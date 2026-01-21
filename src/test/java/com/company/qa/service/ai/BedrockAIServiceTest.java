@@ -59,8 +59,8 @@ class BedrockAIServiceTest {
         bedrockConfig.setTemperature(0.7);
 
         // Get credentials from environment
-        bedrockConfig.setAccessKeyId("AKIAWSTSBPYDSFTZSOVC");
-        bedrockConfig.setSecretAccessKey("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");
+        bedrockConfig.setAccessKeyId("");
+        bedrockConfig.setSecretAccessKey("");
 
         aiConfig.setBedrock(bedrockConfig);
 
