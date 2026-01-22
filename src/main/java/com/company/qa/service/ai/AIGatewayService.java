@@ -1,6 +1,8 @@
 package com.company.qa.service.ai;
 
 import com.company.qa.model.dto.*;
+import com.company.qa.model.enums.AIProvider;
+import com.company.qa.model.enums.AITaskType;
 import com.company.qa.model.enums.ApprovalRequestType;
 import com.company.qa.model.enums.UserRole;
 import com.company.qa.service.approval.ApprovalRequestService;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import com.company.qa.service.ai.AIUsageTrackingService.AIUsageRequest;
 
 /**
  * Secure AI Gateway Service - SINGLE ENTRY POINT for all AI interactions.
@@ -41,6 +44,7 @@ public class AIGatewayService {
     private final AuditLogService auditLogService;
     // Add this field to AIGatewayService
     private final ApprovalRequestService approvalRequestService;
+    private final AIUsageTrackingService usageTrackingService;
 
     /**
      * Generate a test through the secure gateway.
@@ -104,10 +108,14 @@ public class AIGatewayService {
                 return createValidationFailedResponse(requestId, validationResult);
             }
 
-            // Step 5: Record usage
+            // Step 5: Record usage (existing rate limiter tracking)
             rateLimiterService.recordTokenUsage(request.getUserId(), aiResponse.getTokensUsed());
             double estimatedCost = calculateCost(aiResponse.getTokensUsed());
             rateLimiterService.recordCost(request.getUserId(), estimatedCost);
+
+            // ⭐ NEW Step 5.5: Track AI usage for cost analytics
+            long processingTime = System.currentTimeMillis() - startTime;
+            trackAIUsage(request, aiResponse, processingTime, true, null);
 
             // Step 6: Log success
             long duration = System.currentTimeMillis() - startTime;
@@ -131,6 +139,11 @@ public class AIGatewayService {
         } catch (Exception e) {
             log.error("Error in AI Gateway for user {}: {}", request.getUserId(), e.getMessage(), e);
             auditLogService.logError(requestId, request.getUserId(), "test_generation", e.getMessage());
+
+            // ⭐ NEW: Track failed AI usage
+            long processingTime = System.currentTimeMillis() - startTime;
+            trackAIUsage(request, null, processingTime, false, e.getMessage());
+
             return createErrorResponse(requestId, "An error occurred processing your request");
         }
     }
@@ -422,5 +435,131 @@ public class AIGatewayService {
     private String extractTestName(String content) {
         // Simple extraction - just take first 50 chars
         return content.length() > 50 ? content.substring(0, 50) + "..." : content;
+    }
+
+    /**
+     * Track AI usage for cost analytics.
+     * This records every AI request for cost tracking and budget management.
+     */
+    private void trackAIUsage(SecureAIRequest request, AIResponse aiResponse,
+                              long processingTimeMs, boolean success, String errorMessage) {
+        try {
+            // Extract token counts from AI response
+            Integer promptTokens = null;
+            Integer completionTokens = null;
+
+            if (aiResponse != null && aiResponse.getTokensUsed() != null) {
+                // Try to extract detailed token breakdown
+                if (aiResponse.getMetadata() != null) {
+                    promptTokens = extractTokenCount(aiResponse.getMetadata(), "promptTokens", "input_tokens");
+                    completionTokens = extractTokenCount(aiResponse.getMetadata(), "completionTokens", "output_tokens");
+                }
+
+                // Fallback: estimate from total tokens (60% input, 40% output)
+                if (promptTokens == null || completionTokens == null) {
+                    int totalTokens = aiResponse.getTokensUsed();
+                    promptTokens = (int) (totalTokens * 0.6);
+                    completionTokens = (int) (totalTokens * 0.4);
+                }
+            } else {
+                // No token info - estimate from content length
+                promptTokens = estimateTokens(request.getContent());
+                completionTokens = aiResponse != null ? estimateTokens(aiResponse.getContent()) : 0;
+            }
+
+            // Determine AI provider (from configuration or aiService)
+            AIProvider provider = determineAIProvider();
+
+            // Build usage request
+            AIUsageRequest usageRequest = AIUsageRequest.builder()
+                    .requestId(UUID.randomUUID().toString())
+                    .userId(request.getUserId())
+                    .userName(request.getUserId() != null ? request.getUserId().toString() : "Unknown")                    .userRole(String.valueOf(request.getUserRole()))
+                    .provider(provider)
+                    .modelName(aiResponse != null && aiResponse.getMetadata() != null
+                            ? extractModelName(aiResponse.getMetadata())
+                            : "default")
+                    .taskType(AITaskType.TEST_GENERATION)
+                    .promptTokens(promptTokens)
+                    .completionTokens(completionTokens)
+                    .totalTokens(promptTokens + completionTokens)
+                    .requestContentLength(request.getContent() != null ? request.getContent().length() : 0)
+                    .responseContentLength(aiResponse != null && aiResponse.getContent() != null
+                            ? aiResponse.getContent().length()
+                            : 0)
+                    .processingTimeMs(processingTimeMs)
+                    .success(success)
+                    .errorMessage(errorMessage)
+                    .build();
+
+            // Record usage
+            usageTrackingService.recordUsage(usageRequest);
+
+            log.debug("AI usage tracked: provider={}, tokens={}, success={}",
+                    provider, promptTokens + completionTokens, success);
+
+        } catch (Exception e) {
+            log.error("Failed to track AI usage - continuing with request", e);
+            // Don't fail the main request if tracking fails
+        }
+    }
+
+    /**
+     * Extract token count from metadata map.
+     */
+    private Integer extractTokenCount(Map<String, Object> metadata, String... keys) {
+        if (metadata == null) {
+            return null;
+        }
+
+        for (String key : keys) {
+            Object value = metadata.get(key);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract model name from metadata.
+     */
+    private String extractModelName(Map<String, Object> metadata) {
+        if (metadata != null && metadata.containsKey("modelId")) {
+            return metadata.get("modelId").toString();
+        }
+        if (metadata != null && metadata.containsKey("model")) {
+            return metadata.get("model").toString();
+        }
+        return "default";
+    }
+
+    /**
+     * Estimate token count from text.
+     * Rough approximation: 1 token ≈ 4 characters
+     */
+    private Integer estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        return Math.max(1, text.length() / 4);
+    }
+
+    /**
+     * Determine which AI provider is being used.
+     * This should be configurable or detected from the AI service.
+     */
+    private AIProvider determineAIProvider() {
+        // Check which AI service implementation is active
+        String aiServiceClass = aiService.getClass().getSimpleName();
+
+        if (aiServiceClass.contains("Bedrock")) {
+            return AIProvider.BEDROCK;
+        } else if (aiServiceClass.contains("Ollama")) {
+            return AIProvider.OLLAMA;
+        } else {
+            return AIProvider.MOCK;
+        }
     }
 }

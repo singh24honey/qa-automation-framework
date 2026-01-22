@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 
 
 import java.time.Instant;
+import java.util.HashMap;
 
 /**
  * AWS Bedrock AI Service with multi-model support.
@@ -175,6 +176,31 @@ public class BedrockAIService implements AIService {
                     aiConfig.getBedrock().getTemperature()
             );
 
+            // ✅ NEW: Extract token breakdown from response metadata
+            // The invokeModel() should have already added tokens to metadata
+            // But let's ensure we have the breakdown for cost tracking
+            if (response.getMetadata() != null) {
+                Object promptTokensObj = response.getMetadata().get("promptTokens");
+                Object completionTokensObj = response.getMetadata().get("completionTokens");
+
+                if (promptTokensObj != null && completionTokensObj != null) {
+                    int promptTokens = ((Number) promptTokensObj).intValue();
+                    int completionTokens = ((Number) completionTokensObj).intValue();
+                    int totalTokens = promptTokens + completionTokens;
+
+                    // Ensure tokensUsed is set for backward compatibility
+                    if (response.getTokensUsed() == null || response.getTokensUsed() == 0) {
+                        response.setTokensUsed(totalTokens);
+                    }
+
+                    // Also add totalTokens to metadata
+                    response.addMetadata("totalTokens", totalTokens);
+
+                    log.debug("Token breakdown - Prompt: {}, Completion: {}, Total: {}",
+                            promptTokens, completionTokens, totalTokens);
+                }
+            }
+
             response.setDurationMs(System.currentTimeMillis() - startTime);
             response.addMetadata("framework", request.getFramework());
             response.addMetadata("language", request.getLanguage());
@@ -191,7 +217,6 @@ public class BedrockAIService implements AIService {
             );
         }
     }
-
     @Override
     public AIResponse analyzeFailure(FailureAnalysisRequest request) {
         log.info("Bedrock AI [{}]: Analyzing failure for test: {}", modelType, request.getTestName());
@@ -295,9 +320,9 @@ public class BedrockAIService implements AIService {
 
     // ========== Model Invocation ==========
 
+    // 1. UPDATE invokeModel()
     private AIResponse invokeModel(String prompt, AITaskType taskType,
                                    Integer maxTokens, Double temperature) throws Exception {
-
         if (bedrockClient == null) {
             throw new IllegalStateException("Bedrock client not initialized");
         }
@@ -319,9 +344,57 @@ public class BedrockAIService implements AIService {
         String responseBody = invokeResponse.body().asUtf8String();
         log.debug("Response: {}", responseBody.substring(0, Math.min(500, responseBody.length())) + "...");
 
-        return parseResponse(responseBody, taskType);
+        AIResponse response = parseResponse(responseBody, taskType);
+
+        // ✅ NEW: Extract and add token usage
+        extractAndAddTokenUsage(responseBody, response);
+
+        return response;
     }
 
+// 2. ADD new helper method
+    /**
+     * Extract token usage from Bedrock response and add to AIResponse metadata.
+     */
+    private void extractAndAddTokenUsage(String responseBody, AIResponse response) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode jsonResponse = mapper.readTree(responseBody);
+
+            int promptTokens = 0;
+            int completionTokens = 0;
+
+            // Amazon Nova response structure
+            if (jsonResponse.has("usage")) {
+                JsonNode usage = jsonResponse.get("usage");
+                promptTokens = usage.has("inputTokens") ? usage.get("inputTokens").asInt() : 0;
+                completionTokens = usage.has("outputTokens") ? usage.get("outputTokens").asInt() : 0;
+            }
+
+            int totalTokens = promptTokens + completionTokens;
+
+            // Add to response metadata
+            if (response.getMetadata() == null) {
+                response.setMetadata(new HashMap<>());
+            }
+
+            response.addMetadata("promptTokens", promptTokens);
+            response.addMetadata("completionTokens", completionTokens);
+            response.addMetadata("totalTokens", totalTokens);
+
+            // Also set tokensUsed field
+            if (response.getTokensUsed() == null || response.getTokensUsed() == 0) {
+                response.setTokensUsed(totalTokens);
+            }
+
+            log.debug("Token usage - Input: {}, Output: {}, Total: {}",
+                    promptTokens, completionTokens, totalTokens);
+
+        } catch (Exception e) {
+            log.warn("Could not extract token usage: {}", e.getMessage());
+            // Don't fail - tracking service will estimate if needed
+        }
+    }
     // ========== Request Building (Model-Specific) ==========
 
     /**

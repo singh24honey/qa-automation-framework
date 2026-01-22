@@ -73,6 +73,8 @@ public class SecureAIRequest {
      */
     private OperationType operationType;
 
+
+
     /**
      * Types of AI operations
      */

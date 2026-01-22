@@ -46,6 +46,9 @@ class AIGatewayServiceTest {
 
     private  ApprovalRequestService approvalRequestService;
 
+    private  AIUsageTrackingService usageTrackingService;
+
+
     @BeforeEach
     void setUp() {
         gatewayService = new AIGatewayService(
@@ -54,7 +57,8 @@ class AIGatewayServiceTest {
                 rateLimiterService,
                 responseValidator,
                 auditLogService,
-                approvalRequestService
+                approvalRequestService,
+                usageTrackingService
         );
     }
 
