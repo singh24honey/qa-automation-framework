@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS quality_trend_analysis (
 
     -- Analysis period
     analysis_date DATE NOT NULL,
-    suite_id BIGINT REFERENCES test_suites(id),
+    suite_id BIGINT,
 
     -- Trend metrics
     pass_rate_7d_avg DECIMAL(5,2),
