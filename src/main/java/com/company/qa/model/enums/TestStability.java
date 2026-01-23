@@ -5,5 +5,5 @@ public enum TestStability {
     MOSTLY_STABLE, // Pass rate 80-94%
     FLAKY,         // Pass rate 50-79%
     VERY_FLAKY,    // Pass rate 20-49%
-    UNRELIABLE     // Pass rate < 20%
+    UNSTABLE, UNRELIABLE     // Pass rate < 20%
 }

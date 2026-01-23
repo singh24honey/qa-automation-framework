@@ -23,6 +23,7 @@ spring:
     validate-on-migrate: false
     locations: classpath:db/migration
 
+
 # Local file storage configuration
 storage:
   type: local

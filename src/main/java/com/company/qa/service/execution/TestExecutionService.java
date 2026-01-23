@@ -10,9 +10,11 @@ import com.company.qa.model.entity.TestExecution;
 import com.company.qa.model.enums.TestStatus;
 import com.company.qa.repository.TestExecutionRepository;
 import com.company.qa.repository.TestRepository;
+import com.company.qa.service.quality.TestQualityHistoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,9 @@ public class TestExecutionService {
     private final SeleniumTestExecutor seleniumTestExecutor;
     private final ObjectMapper objectMapper;
     private final ExecutionCancellationService cancellationService;  // ADD THIS
+
+    @Autowired
+    private TestQualityHistoryService qualityHistoryService;  // Inject
 
 
     @Value("${execution.timeout-minutes:10}")
@@ -119,6 +124,8 @@ public class TestExecutionService {
             }
 
             testExecutionRepository.save(execution);
+            qualityHistoryService.recordExecutionHistory(execution);
+
             cancellationService.clearCancellation(executionId);
 
             log.info("Execution completed: {} status={}", executionId, execution.getStatus());
