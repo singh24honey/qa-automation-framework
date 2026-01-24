@@ -32,12 +32,6 @@ public interface ApiEndpointRepository extends JpaRepository<ApiEndpoint, Long> 
      */
     Optional<ApiEndpoint> findBySpecificationIdAndPathAndMethod(Long specId, String path, String method);
 
-    /**
-     * Find endpoints by tag
-     */
-    @Query("SELECT e FROM ApiEndpoint e WHERE :tag = ANY(e.tags) " +
-            "ORDER BY e.path ASC")
-    List<ApiEndpoint> findByTag(@Param("tag") String tag);
 
     /**
      * Find deprecated endpoints

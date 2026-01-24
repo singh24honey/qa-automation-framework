@@ -99,8 +99,13 @@ dependencies {
     implementation platform("software.amazon.awssdk:bom:2.25.29")
     implementation "software.amazon.awssdk:eventbridge:2.25.15"
 
-    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+    //implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+    implementation 'io.swagger.parser.v3:swagger-parser:2.1.19'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.16.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
 
+    // JSON processing
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
 
 tasks.named('test') {

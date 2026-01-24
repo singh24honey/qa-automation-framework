@@ -1,20 +1,22 @@
 package com.company.qa.model.entity;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.Type;
-import io.hypersistence.utils.hibernate.type.array.StringArrayType;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
-/**
- * Links generated tests to the API context that was used
- */
+@Slf4j
 @Entity
 @Table(name = "test_generation_context")
 @Data
@@ -23,11 +25,12 @@ import java.util.UUID;
 @AllArgsConstructor
 public class TestGenerationContext {
 
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // References
     @Column(name = "test_id", nullable = false)
     private UUID testId;
 
@@ -39,19 +42,16 @@ public class TestGenerationContext {
     @JoinColumn(name = "endpoint_id")
     private ApiEndpoint endpoint;
 
-    // Context used for generation
     @Column(name = "prompt_with_context", columnDefinition = "TEXT")
     private String promptWithContext;
 
     @Column(name = "context_type", length = 50)
-    private String contextType; // ENDPOINT, SCHEMA, FULL_SPEC
+    private String contextType;
 
-    // Schemas referenced
-    @Column(name = "schemas_used", columnDefinition = "text[]")
-    @Type(StringArrayType.class)
-    private String[] schemasUsed;
+    // Store schemas used as JSON string in TEXT column
+    @Column(name = "schemas_used", columnDefinition = "TEXT")
+    private String schemasUsedJson;
 
-    // Generation metadata
     @Column(name = "generated_at", nullable = false)
     private Instant generatedAt;
 
@@ -61,7 +61,6 @@ public class TestGenerationContext {
     @Column(name = "ai_cost", precision = 10, scale = 4)
     private BigDecimal aiCost;
 
-    // Quality tracking
     @Column(name = "approved")
     private Boolean approved;
 
@@ -79,17 +78,47 @@ public class TestGenerationContext {
         }
     }
 
-    /**
-     * Mark as approved
-     */
+    // Convenience methods for schemas used
+    @Transient
+    public List<String> getSchemasUsed() {
+        if (schemasUsedJson == null || schemasUsedJson.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            String[] array = objectMapper.readValue(schemasUsedJson, String[].class);
+            return Arrays.asList(array);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse schemas used JSON: {}", schemasUsedJson, e);
+            return new ArrayList<>();
+        }
+    }
+
+    public void setSchemasUsed(List<String> schemasUsed) {
+        if (schemasUsed == null || schemasUsed.isEmpty()) {
+            this.schemasUsedJson = null;
+            return;
+        }
+        try {
+            this.schemasUsedJson = objectMapper.writeValueAsString(schemasUsed);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize schemas used to JSON", e);
+            this.schemasUsedJson = null;
+        }
+    }
+
+    public void setSchemasUsed(String[] schemasUsed) {
+        if (schemasUsed == null || schemasUsed.length == 0) {
+            this.schemasUsedJson = null;
+            return;
+        }
+        setSchemasUsed(Arrays.asList(schemasUsed));
+    }
+
     public void markApproved(String notes) {
         this.approved = true;
         this.approvalNotes = notes;
     }
 
-    /**
-     * Mark as rejected
-     */
     public void markRejected(String notes) {
         this.approved = false;
         this.approvalNotes = notes;
