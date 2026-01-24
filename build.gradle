@@ -98,6 +98,9 @@ dependencies {
     implementation 'org.json:json:20231013'  // Updated to newer version
     implementation platform("software.amazon.awssdk:bom:2.25.29")
     implementation "software.amazon.awssdk:eventbridge:2.25.15"
+
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
+
 }
 
 tasks.named('test') {
