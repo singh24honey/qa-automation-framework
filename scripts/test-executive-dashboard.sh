@@ -3,7 +3,7 @@
 echo "🧪 Testing Executive Dashboard APIs"
 echo "===================================="
 
-API_KEY="dev-key-12345"
+API_KEY=""
 BASE_URL="http://localhost:8080/api/v1"
 
 # Test 1: Get Executive Dashboard

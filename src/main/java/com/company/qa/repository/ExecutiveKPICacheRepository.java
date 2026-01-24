@@ -2,6 +2,7 @@ package com.company.qa.repository;
 
 import com.company.qa.model.entity.ExecutiveKPICache;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -28,4 +29,21 @@ public interface ExecutiveKPICacheRepository extends JpaRepository<ExecutiveKPIC
     @Query("SELECT k FROM ExecutiveKPICache k WHERE k.periodStart >= :since " +
             "ORDER BY k.periodStart DESC")
     List<ExecutiveKPICache> findRecentKPIs(@Param("since") Instant since);
+
+    /**
+     * Count KPIs generated after a certain time
+     */
+    long countByCacheGeneratedAtAfter(Instant timestamp);
+
+    /**
+     * Count KPIs by period type
+     */
+    long countByPeriodType(String periodType);
+
+    /**
+     * Delete old KPI records
+     */
+    @Modifying
+    @Query("DELETE FROM ExecutiveKPICache k WHERE k.periodStart < :cutoff")
+    int deleteByPeriodStartBefore(@Param("cutoff") Instant cutoff);
 }

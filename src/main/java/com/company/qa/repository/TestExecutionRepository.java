@@ -26,4 +26,27 @@ public interface TestExecutionRepository extends JpaRepository<TestExecution, UU
 
     Page<TestExecution> findAllByOrderByStartTimeDesc(Pageable pageable);
 
+    // ===== NEW METHODS FOR WEEK 7 =====
+
+    /**
+     * Count executions in date range
+     */
+    long countByStartTimeBetween(Instant start, Instant end);
+
+    /**
+     * Calculate average execution time in date range
+     */
+    @Query("SELECT AVG(e.duration) FROM TestExecution e " +
+            "WHERE e.startTime BETWEEN :start AND :end " +
+            "AND e.duration IS NOT NULL")
+    Double findAverageExecutionTime(@Param("start") Instant start, @Param("end") Instant end);
+
+    /**
+     * Find peak concurrency - count max simultaneous executions
+     */
+    @Query("SELECT COUNT(e) FROM TestExecution e " +
+            "WHERE e.startTime <= :timestamp " +
+            "AND (e.endTime IS NULL OR e.endTime >= :timestamp)")
+    long countConcurrentAt(@Param("timestamp") Instant timestamp);
+
 }

@@ -2,6 +2,7 @@ package com.company.qa.repository;
 
 import com.company.qa.model.entity.ExecutiveAlert;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -37,4 +38,14 @@ public interface ExecutiveAlertRepository extends JpaRepository<ExecutiveAlert, 
     Long countByStatusAndSeverity(
             @Param("status") String status,
             @Param("severity") String severity);
+
+
+    long countByAcknowledgedAtIsNotNull();
+
+    /**
+     * Delete old resolved alerts
+     */
+    @Modifying
+    @Query("DELETE FROM ExecutiveAlert a WHERE a.status = :status AND a.resolvedAt < :cutoff")
+    int deleteByStatusAndResolvedAtBefore(@Param("status") String status, @Param("cutoff") Instant cutoff);
 }
