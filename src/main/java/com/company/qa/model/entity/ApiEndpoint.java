@@ -1,5 +1,6 @@
 package com.company.qa.model.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
@@ -30,6 +31,7 @@ public class ApiEndpoint {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JsonIgnore
     @JoinColumn(name = "spec_id", nullable = false)
     private ApiSpecification specification;
 

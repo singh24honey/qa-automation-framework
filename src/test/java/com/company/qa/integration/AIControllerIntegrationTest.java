@@ -349,4 +349,6 @@ class AIControllerIntegrationTest {
         var dataNode = jsonNode.get("data");
         return objectMapper.treeToValue(dataNode, AIResponse.class);
     }
+
+
 }

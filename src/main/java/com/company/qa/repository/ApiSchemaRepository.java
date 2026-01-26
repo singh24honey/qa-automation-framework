@@ -1,6 +1,7 @@
 package com.company.qa.repository;
 
 import com.company.qa.model.entity.ApiSchema;
+import com.company.qa.model.entity.ApiSpecification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -51,4 +52,6 @@ public interface ApiSchemaRepository extends JpaRepository<ApiSchema, Long> {
             "LOWER(s.schemaName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
             "ORDER BY s.schemaName ASC")
     List<ApiSchema> searchSchemas(@Param("searchTerm") String searchTerm);
+
+    Optional<ApiSchema> findBySpecificationAndSchemaName(ApiSpecification spec, String createUserRequest);
 }

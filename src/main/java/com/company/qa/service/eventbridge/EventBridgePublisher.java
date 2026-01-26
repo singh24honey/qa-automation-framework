@@ -2,6 +2,7 @@ package com.company.qa.service.eventbridge;
 
 import com.company.qa.event.RequestLoggedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,8 +42,16 @@ public class EventBridgePublisher {
             );
 
             log.debug("Published RequestLoggedEvent to EventBridge");
+
         } catch (Exception e) {
             log.error("Failed to publish event to EventBridge", e);
         }
     }
+
+    @PostConstruct
+    public void logBusConfig() {
+        log.error(">>> EventBridge bus resolved to = [{}]", eventBusName);
+    }
+
+
 }

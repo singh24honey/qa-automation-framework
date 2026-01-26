@@ -27,6 +27,7 @@ public class ResponseValidator {
 
     private final DataSanitizerService sanitizerService;
 
+
     // Dangerous code patterns that should never appear in generated tests
     private static final List<Pattern> DANGEROUS_CODE_PATTERNS = List.of(
             Pattern.compile("Runtime\\.getRuntime\\(\\)\\.exec", Pattern.CASE_INSENSITIVE),
@@ -61,7 +62,9 @@ public class ResponseValidator {
             "java.time",
             "java.io.File",
             "static org.junit",
-            "static org.assertj"
+            "static org.assertj",
+            "io.cucumber",
+            "com.fasterxml.jackson"
     );
 
     /**
@@ -131,7 +134,7 @@ public class ResponseValidator {
         }
 
         // 6. Check response length (prevent token abuse)
-        if (response.length() > 100_000) {
+        if (response.length() > 100_00) {
             builder.addViolation(ViolationType.LENGTH_VIOLATION,
                     "Response exceeds maximum length (100K characters)");
             warnings.add("Response exceeds recommended length");

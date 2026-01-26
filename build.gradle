@@ -81,7 +81,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
     // JSON processing
-    implementation 'com.fasterxml.jackson.core:jackson-databind'
+   // implementation 'com.fasterxml.jackson.core:jackson-databind'
 
     // AWS SDK v2 for Bedrock - FIXED: Using compatible version with Bedrock support
     // Bedrock Runtime was introduced in AWS SDK v2.21.x
@@ -100,9 +100,11 @@ dependencies {
     implementation "software.amazon.awssdk:eventbridge:2.25.15"
 
     //implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.7.0'
-    implementation 'io.swagger.parser.v3:swagger-parser:2.1.19'
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.16.1'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
+    implementation('io.swagger.parser.v3:swagger-parser:2.1.19') {
+        exclude group: 'com.fasterxml.jackson.core'
+        exclude group: 'com.fasterxml.jackson.dataformat'
+    }    //implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.16.1'
+    //implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
 
     // JSON processing
     implementation 'com.google.code.gson:gson:2.10.1'

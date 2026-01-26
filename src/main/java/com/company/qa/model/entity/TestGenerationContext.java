@@ -34,6 +34,10 @@ public class TestGenerationContext {
     @Column(name = "test_id", nullable = false)
     private UUID testId;
 
+    // ✅ ADD THIS - Link to approval request
+    @Column(name = "approval_request_id")
+    private UUID approvalRequestId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "spec_id")
     private ApiSpecification specification;

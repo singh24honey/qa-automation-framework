@@ -77,4 +77,19 @@ public interface TestGenerationContextRepository extends JpaRepository<TestGener
             "CAST(COUNT(*) AS double) FROM TestGenerationContext t " +
             "WHERE t.approved IS NOT NULL")
     Double getApprovalRate();
+
+
+    Optional<TestGenerationContext> findByApprovalRequestId(UUID approvalRequestId);
+
+    List<TestGenerationContext> findBySpecificationId(Long specId);
+
+    List<TestGenerationContext> findByEndpointId(Long endpointId);
+
+    List<TestGenerationContext> findByApproved(Boolean approved);
+
+    @Query("SELECT t FROM TestGenerationContext t WHERE t.specification.id = :specId AND t.approved = true")
+    List<TestGenerationContext> findApprovedBySpecId(Long specId);
+
+    @Query("SELECT COUNT(t) FROM TestGenerationContext t WHERE t.approved = true")
+    long countApproved();
 }
