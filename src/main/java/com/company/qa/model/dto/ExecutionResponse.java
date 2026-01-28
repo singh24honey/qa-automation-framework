@@ -25,4 +25,5 @@ public class ExecutionResponse {
     private String errorMessage;
     private List<String> screenshotUrls;
     private String logUrl;
+    private String externalExecutionRef;
 }

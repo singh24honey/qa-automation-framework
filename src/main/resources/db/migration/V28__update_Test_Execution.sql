@@ -1,0 +1,8 @@
+ALTER TABLE test_executions
+ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20),
+ADD COLUMN IF NOT EXISTS external_execution_ref VARCHAR(255),
+ADD COLUMN IF NOT EXISTS quality_verdict VARCHAR(20),
+ADD COLUMN IF NOT EXISTS quality_reasons VARCHAR(1000),
+ADD COLUMN IF NOT EXISTS ai_recommendations VARCHAR(1000);
+
+

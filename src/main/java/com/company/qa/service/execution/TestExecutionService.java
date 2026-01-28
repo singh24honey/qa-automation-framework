@@ -1,6 +1,15 @@
 package com.company.qa.service.execution;
 
+import com.company.qa.ai.model.AiRecommendation;
+import com.company.qa.ai.service.AiRecommendationService;
+import com.company.qa.analytics.model.TestAnalyticsSnapshot;
+import com.company.qa.analytics.service.TestAnalyticsService;
 import com.company.qa.exception.ResourceNotFoundException;
+import com.company.qa.execution.context.ExecutionContext;
+import com.company.qa.execution.decision.ExecutionMode;
+import com.company.qa.execution.decision.ExecutionModeDecider;
+import com.company.qa.execution.engine.ExecutionEngine;
+import com.company.qa.execution.engine.ExecutionResult;
 import com.company.qa.model.dto.ExecutionRequest;
 import com.company.qa.model.dto.ExecutionResponse;
 import com.company.qa.model.dto.RetryConfig;
@@ -8,6 +17,8 @@ import com.company.qa.model.dto.TestScript;
 import com.company.qa.model.entity.Test;
 import com.company.qa.model.entity.TestExecution;
 import com.company.qa.model.enums.TestStatus;
+import com.company.qa.quality.model.QualityGateResult;
+import com.company.qa.quality.service.QualityGateService;
 import com.company.qa.repository.TestExecutionRepository;
 import com.company.qa.repository.TestRepository;
 import com.company.qa.service.quality.TestQualityHistoryService;
@@ -37,6 +48,12 @@ public class TestExecutionService {
     private final SeleniumTestExecutor seleniumTestExecutor;
     private final ObjectMapper objectMapper;
     private final ExecutionCancellationService cancellationService;  // ADD THIS
+    private final ExecutionModeDecider executionModeDecider;
+    private final ExecutionEngine internalExecutionEngine;
+    private final ExecutionEngine delegatedExecutionEngine;
+    private final TestAnalyticsService testAnalyticsService;
+    private final QualityGateService qualityGateService;
+    private final AiRecommendationService aiRecommendationService;
 
     @Autowired
     private TestQualityHistoryService qualityHistoryService;  // Inject
@@ -57,6 +74,7 @@ public class TestExecutionService {
                 .platform("Selenium Grid")
                 .triggeredBy("API")
                 .retryCount(0)
+                .externalExecutionRef(UUID.randomUUID().toString())
                 .startTime(Instant.now())
                 .build();
 
@@ -100,7 +118,25 @@ public class TestExecutionService {
 
             RetryConfig retryConfig = buildRetryConfig(request);
 
-            SeleniumTestExecutor.ExecutionResult result =
+            ExecutionContext context = ExecutionContext.builder()
+                    .executionId(execution.getId())
+                    .testId(test.getId())
+                    .framework(test.getFramework())
+                    .selector(test.getName()) // or test.getName() for now
+                    .environment(request.getEnvironment())
+                    .browser(browser)
+                    .headless(headless)
+                    .retryConfig(retryConfig)
+                    .triggeredBy("API")
+                    .triggeredAt(Instant.now())
+                    .testScript(testScript)
+                    .build();
+
+            ExecutionMode mode = executionModeDecider.decide(context);
+            execution.setExecutionMode(mode);
+            testExecutionRepository.save(execution);
+
+            /*SeleniumTestExecutor.ExecutionResult result =
                     seleniumTestExecutor.execute(
                             executionId.toString(),
                             testScript,
@@ -108,10 +144,47 @@ public class TestExecutionService {
                             headless,
                             retryConfig
                             //timeoutMinutes
-                    );
+                    );*/
 
+            ExecutionResult result ;
+
+            if (execution.getExecutionMode() == ExecutionMode.INTERNAL) {
+                result = internalExecutionEngine.execute(context);
+            } else {
+                result = delegatedExecutionEngine.execute(context);
+            }
+
+            TestAnalyticsSnapshot analytics =
+                    testAnalyticsService.updateAnalytics(execution);
+
+            QualityGateResult gateResult =
+                    qualityGateService.evaluate(execution, analytics);
+
+            List<AiRecommendation> recommendations =
+                    aiRecommendationService.recommend(execution, analytics);
+
+            execution.setAiRecommendations(
+                    recommendations.stream()
+                            .map(r -> r.getType() + ": " + r.getReason())
+                            .collect(Collectors.joining(" | "))
+            );
+
+            testExecutionRepository.save(execution);
+
+            execution.setQualityVerdict(gateResult.getVerdict());
+            execution.setQualityReasons(
+                    String.join("; ", gateResult.getReasons())
+            );
+
+            testExecutionRepository.save(execution);
+            if (execution.getExecutionMode() == ExecutionMode.DELEGATED) {
+                execution.setStatus(TestStatus.RUNNING);
+                execution.setExternalExecutionRef(result.getExternalExecutionRef());
+                testExecutionRepository.save(execution);
+                return;
+            }
             execution.setEndTime(Instant.now());
-            execution.setDuration(result.getDurationMs());
+            execution.setDuration((int) result.getDurationMs());
             execution.setStatus(result.isSuccess() ? TestStatus.PASSED : TestStatus.FAILED);
             execution.setErrorDetails(result.getErrorMessage());
             execution.setLogUrl(result.getLogUrl());
@@ -122,6 +195,7 @@ public class TestExecutionService {
             if (result.getScreenshotUrls() != null && !result.getScreenshotUrls().isEmpty()) {
                 execution.setScreenshotUrls(result.getScreenshotUrls().toArray(new String[0]));
             }
+
 
             testExecutionRepository.save(execution);
             qualityHistoryService.recordExecutionHistory(execution);
@@ -306,6 +380,7 @@ public class TestExecutionService {
                 .screenshotUrls(execution.getScreenshotUrls() != null ?
                         Arrays.asList(execution.getScreenshotUrls()) : null)
                 .logUrl(execution.getLogUrl())
+                .externalExecutionRef(execution.getExternalExecutionRef())
                 .build();
     }
 }

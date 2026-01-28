@@ -1,7 +1,9 @@
 package com.company.qa.model.entity;
 
+import com.company.qa.execution.decision.ExecutionMode;
 import com.company.qa.model.StringListConverter;
 import com.company.qa.model.enums.TestStatus;
+import com.company.qa.quality.model.QualityVerdict;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.*;
@@ -69,6 +71,22 @@ public class TestExecution extends BaseEntity {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "execution_mode")
+    private ExecutionMode executionMode;
+
+    @Column(name = "external_execution_ref")
+    private String externalExecutionRef;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "quality_verdict")
+    private QualityVerdict qualityVerdict;
+
+    @Column(name = "quality_reasons", length = 1000)
+    private String qualityReasons;
+
+    @Column(name = "ai_recommendations", length = 1000)
+    private String aiRecommendations;
 
     @PrePersist
     protected void onCreate() {
