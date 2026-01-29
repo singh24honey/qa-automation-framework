@@ -108,6 +108,11 @@ dependencies {
 
     // JSON processing
     implementation 'com.google.code.gson:gson:2.10.1'
+
+    implementation 'software.amazon.awssdk:secretsmanager:2.25.27'
+
+    // WireMock for integration tests
+    testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
 }
 
 tasks.named('test') {

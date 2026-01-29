@@ -38,3 +38,48 @@ logging:
   logging:
     request:
       mode: postgres    # postgres | eventbridge | hybrid
+
+# Add to existing application.yml
+jira:
+  # AWS Secrets Manager integration
+  secrets:
+    enabled: true
+    region: ${AWS_REGION:us-east-1}
+    cache-ttl-seconds: 3600 # Cache credentials for 1 hour
+
+  # Default configuration (can be overridden per config)
+  api:
+    connect-timeout-ms: 5000
+    read-timeout-ms: 10000
+    max-retries: 3
+    retry-backoff-ms: 1000
+
+  # Rate limiting
+  rate-limit:
+    requests-per-minute: 60 # JIRA Cloud default
+    burst-capacity: 10
+
+  # Health check
+  health:
+    enabled: true
+    interval-seconds: 300 # Check every 5 minutes
+
+  # Security
+  security:
+    validate-ssl: true
+    allowed-domains:
+      - "*.atlassian.net"
+
+# Spring profiles specific settings
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+jira:
+  secrets:
+    enabled: false # Use mock credentials in tests
+  api:
+    connect-timeout-ms: 1000
+    read-timeout-ms: 2000

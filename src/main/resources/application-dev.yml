@@ -186,3 +186,8 @@ aws:
     enabled: true
     bus-name: qa-framework-audit-bus
     source: qa-framework.api
+
+jira:
+  secrets:
+    enabled: true
+    region: us-east-1

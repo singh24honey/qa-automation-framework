@@ -72,3 +72,10 @@ redis:
   host: localhost
   port: 6380  # Your Docker Redis port
   timeout: 2000ms
+
+jira:
+  secrets:
+    enabled: false  # Uses mock credentials
+  api:
+    connect-timeout-ms: 1000
+    read-timeout-ms: 2000
