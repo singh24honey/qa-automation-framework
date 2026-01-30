@@ -1,13 +1,14 @@
 package com.company.qa.integration.secrets;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.*;
 
 /**
  * Immutable JIRA credentials retrieved from AWS Secrets Manager.
  * Never log or persist these values!
  */
-@Value
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class JiraCredentials {
     /**
@@ -25,6 +26,8 @@ public class JiraCredentials {
      * Optional: JIRA Cloud ID for advanced APIs
      */
     String cloudId;
+
+
 
     /**
      * Returns HTTP Basic Auth header value.

@@ -34,8 +34,10 @@ public class JiraConfiguration {
     private String configName;
 
     @NotBlank
-    @Pattern(regexp = "^https://.*", message = "JIRA URL must start with https://")
-    @Column(name = "jira_url", nullable = false, length = 500)
+    @Pattern(
+            regexp = "^https?://.*",  // Allow http OR https
+            message = "JIRA URL must be a valid HTTP/HTTPS URL"
+    )
     private String jiraUrl;
 
     @NotBlank

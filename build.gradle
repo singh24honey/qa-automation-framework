@@ -113,6 +113,12 @@ dependencies {
 
     // WireMock for integration tests
     testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-60:3.7.3'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    implementation "org.postgresql:postgresql"
+
 }
 
 tasks.named('test') {
