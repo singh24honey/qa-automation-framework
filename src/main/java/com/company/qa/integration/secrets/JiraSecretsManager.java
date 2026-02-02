@@ -45,7 +45,7 @@ public class JiraSecretsManager {
         }
     }
 
-    @Cacheable(value = "jiraSecrets", key = "#secretArn", unless = "#result == null")
+    //@Cacheable(value = "jiraSecrets", key = "#secretArn", unless = "#result == null")
     public JiraCredentials getCredentials(String secretArn) {
         log.debug("Fetching JIRA credentials from secret: {}", secretArn);
 

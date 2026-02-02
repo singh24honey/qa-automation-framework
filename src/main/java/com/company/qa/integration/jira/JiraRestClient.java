@@ -7,7 +7,12 @@ import com.company.qa.integration.secrets.JiraSecretsManager;
 import com.company.qa.model.dto.RetryConfig;
 import com.company.qa.model.entity.JiraConfiguration;
 import com.company.qa.service.execution.RetryService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -19,6 +24,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+
 
 /**
  * JIRA Cloud REST API client with retry logic and simple rate limiting.
@@ -86,6 +97,7 @@ public class JiraRestClient {
             log.error("JIRA health check failed: {}", config.getConfigName(), e);
             return false;
         }
+       // return  true;
     }
 
     /**
@@ -102,6 +114,7 @@ public class JiraRestClient {
     ) {
         String requestId = generateRequestId();
 
+
         // Simple rate limiting
         TokenBucket bucket = rateLimiters.computeIfAbsent(
                 config.getId().toString(),
@@ -117,6 +130,8 @@ public class JiraRestClient {
             throw new QaFrameworkException("JIRA API rate limit exceeded");
         }
 
+        boolean isHealthCheck = endpoint.equals("/rest/api/3/myself")
+                || endpoint.equals("/rest/api/3/serverInfo");
         // Build retry config from JiraProperties
         RetryConfig retryConfig = RetryConfig.builder()
                 .enabled(true)
@@ -147,6 +162,39 @@ public class JiraRestClient {
         return result.getResult();
     }
 
+    private String executeRequestDirect(
+            JiraConfiguration config,
+            String endpoint,
+            Map<String, String> queryParams,
+            JiraCredentials credentials
+    ) throws Exception {
+
+        String fullUrl = buildUrl(config.getJiraUrl(), endpoint, queryParams);
+
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpGet httpGet = new HttpGet(fullUrl);
+
+            // Add headers
+            httpGet.setHeader("Authorization", credentials.toBasicAuthHeader());
+            httpGet.setHeader("Accept", "application/json");
+            httpGet.setHeader("Content-Type", "application/json");
+
+            log.info("🔍 DEBUG: Making direct HTTP call to: {}", fullUrl);
+
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                String body = EntityUtils.toString(response.getEntity());
+
+                log.info("🔍 DEBUG: Direct HTTP Status: {}", statusCode);
+                log.info("🔍 DEBUG: Direct HTTP Body Length: {}", body.length());
+                log.info("🔍 DEBUG: Direct HTTP Body (first 500): {}",
+                        body.substring(0, Math.min(500, body.length())));
+
+                return body;
+            });
+        }
+    }
+
     /**
      * Execute the actual HTTP request.
      */
@@ -168,56 +216,93 @@ public class JiraRestClient {
             // Build URL
             String fullUrl = buildUrl(config.getJiraUrl(), endpoint, queryParams);
 
-            // Build headers
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", credentials.toBasicAuthHeader());
-            headers.set("X-Request-ID", requestId);
-            headers.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+            // ✅ USE DIRECT HTTP CLIENT (since RestTemplate.exchange() is broken)
+            try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
 
-            // Build entity
-            HttpEntity<?> entity = requestBody != null
-                    ? new HttpEntity<>(requestBody, headers)
-                    : new HttpEntity<>(headers);
+                if (method == HttpMethod.GET) {
+                    HttpGet httpGet = new HttpGet(fullUrl);
+                    httpGet.setHeader("Authorization", credentials.toBasicAuthHeader());
+                    httpGet.setHeader("Accept", "application/json");
+                    httpGet.setHeader("Content-Type", "application/json");
+                    httpGet.setHeader("X-Request-ID", requestId);
 
-            // Execute request
-            log.debug("JIRA API {} {}", method, fullUrl);
-            ResponseEntity<String> response = restTemplate.exchange(
-                    fullUrl, method, entity, String.class
-            );
+                    log.debug("JIRA API {} {}", method, fullUrl);
 
-            // Log success
-            long durationMs = Duration.between(startTime, Instant.now()).toMillis();
-            apiAuditLogger.logApiCall(
-                    config, endpoint, method.name(), response.getStatusCodeValue(),
-                    requestId, (int) durationMs, null, false, false, userId
-            );
+                    String body = httpClient.execute(httpGet, response -> {
+                        int statusCode = response.getCode();
+                        String responseBody = EntityUtils.toString(response.getEntity());
 
-            return response.getBody();
+                        // Validate response
+                        if (responseBody == null || responseBody.trim().length() < 5) {
+                            throw new RuntimeException(
+                                    "JIRA API returned empty or truncated response for " + endpoint
+                            );
+                        }
+
+                        // Log success
+                        long durationMs = Duration.between(startTime, Instant.now()).toMillis();
+                        apiAuditLogger.logApiCall(
+                                config, endpoint, method.name(), statusCode,
+                                requestId, (int) durationMs, null, false, false, userId
+                        );
+
+                        return responseBody;
+                    });
+
+                    return body;
+
+                } else if (method == HttpMethod.POST) {
+                    HttpPost httpPost = new HttpPost(fullUrl);
+                    httpPost.setHeader("Authorization", credentials.toBasicAuthHeader());
+                    httpPost.setHeader("Accept", "application/json");
+                    httpPost.setHeader("Content-Type", "application/json");
+                    httpPost.setHeader("X-Request-ID", requestId);
+
+                    // Add request body if present
+                    if (requestBody != null) {
+                        String jsonBody = new ObjectMapper().writeValueAsString(requestBody);
+                        httpPost.setEntity(new StringEntity(jsonBody,
+                                org.apache.hc.core5.http.ContentType.APPLICATION_JSON));
+                    }
+
+                    log.debug("JIRA API {} {}", method, fullUrl);
+
+                    String body = httpClient.execute(httpPost, response -> {
+                        int statusCode = response.getCode();
+                        String responseBody = EntityUtils.toString(response.getEntity());
+
+                        // Log success
+                        long durationMs = Duration.between(startTime, Instant.now()).toMillis();
+                        apiAuditLogger.logApiCall(
+                                config, endpoint, method.name(), statusCode,
+                                requestId, (int) durationMs, null, false, false, userId
+                        );
+
+                        return responseBody;
+                    });
+
+                    return body;
+                } else {
+                    throw new UnsupportedOperationException("HTTP method not supported: " + method);
+                }
+            }
 
         } catch (HttpClientErrorException | HttpServerErrorException e) {
             long durationMs = Duration.between(startTime, Instant.now()).toMillis();
-
-            // Log failure
             apiAuditLogger.logApiCall(
                     config, endpoint, method.name(), e.getRawStatusCode(),
                     requestId, (int) durationMs, e.getMessage(), false,
                     shouldRetryHttpError(e), userId
             );
-
-            // Rethrow for RetryService to handle
             throw new RuntimeException("JIRA API error: " + e.getMessage(), e);
+
         } catch (Exception e) {
             long durationMs = Duration.between(startTime, Instant.now()).toMillis();
-
-            // Log failure
             apiAuditLogger.logApiCall(
                     config, endpoint, method.name(), null,
                     requestId, (int) durationMs, e.getMessage(), false,
                     true, userId
             );
-
-            // Rethrow for RetryService to handle
             throw new RuntimeException("JIRA API error: " + e.getMessage(), e);
         }
     }
@@ -238,7 +323,7 @@ public class JiraRestClient {
         return false;
     }
 
-    private String buildUrl(String baseUrl, String endpoint, Map<String, String> queryParams) {
+    private static String buildUrl(String baseUrl, String endpoint, Map<String, String> queryParams) {
         UriComponentsBuilder builder = UriComponentsBuilder
                 .fromHttpUrl(baseUrl)
                 .path(endpoint);
@@ -285,5 +370,8 @@ public class JiraRestClient {
                 lastRefill = now;
             }
         }
+
+
+
     }
 }

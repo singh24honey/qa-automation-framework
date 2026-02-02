@@ -10,8 +10,10 @@ import com.company.qa.service.parser.AcceptanceCriteriaParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,15 +72,22 @@ public class JiraStoryService {
         log.info("Fetching JIRA story: {} (userId: {})", jiraKey, userId);
 
         // Get default JIRA configuration
-        JiraConfiguration config = configRepository.findByConfigName("default")
+        JiraConfiguration config = configRepository.findByConfigName("default-dev")
                 .orElseThrow(() -> new JiraIntegrationException(
                         "Default JIRA configuration not found. Please configure JIRA integration first."
                 ));
 
         // Check if story already exists (update if so)
+        // 🔎 AUTH SANITY CHECK (temporary but recommended)
+        try {
+            verifyJiraAuthentication(config,userId);
+        } catch (Exception e) {
+            log.warn("Skipping Jira health check due to transient error: {}", e.getMessage());
+        }
+// Check if story already exists (update if so)
         Optional<JiraStory> existing = storyRepository.findByJiraKey(jiraKey);
 
-        // Fetch from JIRA API
+// Fetch from JIRA API
         String endpoint = "/rest/api/3/issue/" + jiraKey;
         Map<String, String> queryParams = new HashMap<>();
         queryParams.put("fields", buildFieldsQuery());
@@ -217,13 +226,16 @@ public class JiraStoryService {
                     .priority(extractPriority(fields))
                     .assignee(extractAssignee(fields))
                     .reporter(extractReporter(fields))
-                    .labelsString(Arrays.toString(labels))
-                    .componentsString(Arrays.toString(components))
                     .jiraCreatedAt(parseDateTime(fields.path("created").asText()))
                     .jiraUpdatedAt(parseDateTime(fields.path("updated").asText()))
                     .rawJson(objectMapper.convertValue(root, Map.class))
                     .customFields(extractCustomFields(fields))
                     .build();
+
+
+            story.setLabels(labels);
+            story.setComponents(components);
+            story.setFetchedAt(LocalDateTime.now());
 
             log.debug("Parsed JIRA story: {} | Type: {} | Status: {} | AC: {}",
                     story.getJiraKey(), story.getStoryType(), story.getStatus(),
@@ -237,6 +249,11 @@ public class JiraStoryService {
         }
     }
 
+
+    @Transactional
+    public JiraStory fetchAndSaveFromJira(String jiraKey) {
+        return fetchStory(jiraKey, "system");
+    }
     /**
      * Parse search results containing multiple issues
      */
@@ -540,6 +557,35 @@ public class JiraStoryService {
         existing.setRawJson(updated.getRawJson());
         existing.setCustomFields(updated.getCustomFields());
         existing.setFetchedAt(LocalDateTime.now());
+    }
+
+
+    /**
+     * Sanity check Jira authentication using /myself
+     * This confirms API token + email + base URL are valid
+     */
+    private void verifyJiraAuthentication(JiraConfiguration config, String userId) {
+        try {
+            String response = jiraRestClient.get(
+                    config,
+                    "/rest/api/3/myself",
+                    Collections.emptyMap(),
+                    userId
+            );
+
+            JsonNode root = objectMapper.readTree(response);
+            String displayName = root.path("displayName").asText("UNKNOWN");
+            String email = root.path("emailAddress").asText("UNKNOWN");
+
+            log.info("✅ Jira auth verified. User: {} ({})", displayName, email);
+
+        } catch (Exception e) {
+            log.error("❌ Jira authentication failed using /myself", e);
+            throw new JiraIntegrationException(
+                    "Jira authentication failed. Check API token, email, and base URL.",
+                    e
+            );
+        }
     }
 }
 

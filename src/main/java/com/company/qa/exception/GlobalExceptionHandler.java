@@ -1,5 +1,6 @@
 package com.company.qa.exception;
 
+import com.company.qa.model.dto.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -79,4 +81,37 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
     }
+
+    // Add these handlers to existing GlobalExceptionHandler
+
+    @ExceptionHandler(TestGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleTestGenerationException(
+            TestGenerationException ex) {
+
+        log.error("Test generation error: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "TEST_GENERATION_ERROR",
+                ex.getMessage(),
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    @ExceptionHandler(ApprovalException.class)
+    public ResponseEntity<ErrorResponse> handleApprovalException(
+            ApprovalException ex) {
+
+        log.error("Approval workflow error: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "APPROVAL_ERROR",
+                ex.getMessage(),
+                LocalDateTime.now()
+        );
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
 }

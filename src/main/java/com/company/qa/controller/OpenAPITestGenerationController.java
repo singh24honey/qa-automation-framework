@@ -9,8 +9,8 @@ import com.company.qa.model.enums.ApprovalStatus;
 import com.company.qa.repository.ApiEndpointRepository;
 import com.company.qa.repository.ApprovalRequestRepository;
 import com.company.qa.repository.TestGenerationContextRepository;
-import com.company.qa.service.openapi.AITestGenerationService;
 import com.company.qa.service.openapi.OpenAPIContextBuilder;
+import com.company.qa.service.openapi.openAPITestGenerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -38,7 +38,7 @@ import java.util.UUID;
 public class OpenAPITestGenerationController {
 
     private final ApiEndpointRepository endpointRepository;
-    private final AITestGenerationService testGenerationService;
+    private final openAPITestGenerationService testGenerationService;
     private final OpenAPIContextBuilder contextBuilder;
     private final ApprovalRequestRepository approvalRequestRepository;
     private final TestGenerationContextRepository contextRepository;
@@ -64,7 +64,7 @@ public class OpenAPITestGenerationController {
 
         try {
             // ✅ Call service with proper parameters
-            AITestGenerationService.GeneratedTestResult result =
+            openAPITestGenerationService.GeneratedTestResult result =
                     testGenerationService.generateTestForEndpoint(
                             endpoint,
                             request.getUserPrompt(),
@@ -132,7 +132,7 @@ public class OpenAPITestGenerationController {
      * ✅ FIXED: Build response - handle type conversions properly
      */
     private GenerateTestResponse buildGenerateResponse(
-            AITestGenerationService.GeneratedTestResult result,
+            openAPITestGenerationService.GeneratedTestResult result,
             ApiEndpoint endpoint,
             ApprovalRequest approval) {
 
@@ -226,7 +226,7 @@ public class OpenAPITestGenerationController {
                         endpoint.getPath()
                 );
 
-                AITestGenerationService.GeneratedTestResult result =
+                openAPITestGenerationService.GeneratedTestResult result =
                         testGenerationService.generateTestForEndpoint(
                                 endpoint,
                                 prompt,
@@ -322,7 +322,7 @@ public class OpenAPITestGenerationController {
      * ✅ CORRECT: Create approval request using proper entity fields
      */
     private ApprovalRequest createApprovalRequest(
-            AITestGenerationService.GeneratedTestResult result,
+            openAPITestGenerationService.GeneratedTestResult result,
             ApiEndpoint endpoint,
             GenerateTestRequest request) {
 

@@ -76,6 +76,9 @@ logging:
     com.company.qa: DEBUG
     com.company.qa.security: DEBUG  # ADD THIS
     org.springframework.security: DEBUG  # ADD THIS (for troubleshooting)
+    com.framework.qa.service: DEBUG
+    com.framework.qa.integration.jira: DEBUG
+    com.company.qa.service.ai: DEBUG
 
 execution:
   timeout-minutes: 10
@@ -151,7 +154,7 @@ ai:
   provider: ${AI_PROVIDER:mock}  # mock, bedrock, or ollama
 
   bedrock:
-    enabled: ${AI_BEDROCK_ENABLED:false}
+    enabled: ${AI_BEDROCK_ENABLED:true}
     region: ${AWS_REGION:us-east-1}
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
@@ -159,6 +162,17 @@ ai:
     max-tokens: 1024
     temperature: 0.7
     timeout: 120
+
+  test-generation:
+    quality:
+      minimum-score: 60.0
+    cost:
+      max-per-test-usd: 0.50
+      max-daily-usd: 1.00
+    retry:
+      max-attempts: 3
+    draft-folder: /tmp/qa-framework/drafts
+    committed-folder: src/test/resources/features
 
   # ADD THIS SECTION
   ollama:
@@ -191,3 +205,9 @@ jira:
   secrets:
     enabled: true
     region: us-east-1
+    secret-name: prod/jira/qa-bot
+  base-url: https://singh24honey.atlassian.net
+  project-key: SCRUM
+  rate-limit:
+    enabled: true
+    requests-per-minute: 60

@@ -84,3 +84,50 @@ jira:
     read-timeout-ms: 2000
   audit:
     enabled: false
+
+# AI Test Generation Configuration
+ai:
+  test-generation:
+    # Output paths
+    draft-folder: "${user.home}/qa-framework/tests/AiDraft"
+    committed-folder: "${user.home}/qa-framework/tests/src/test"
+
+    # Quality thresholds
+    quality:
+      minimum-score: 60.0
+      auto-approve-threshold: 90.0
+      confidence-threshold: HIGH
+
+    # Cost controls
+    cost:
+      max-per-test-usd: 0.50
+      daily-limit-usd: 1.00
+      alert-threshold-usd: 1.00
+
+    # Retry configuration
+    retry:
+      max-attempts: 3
+      backoff-multiplier: 2
+      initial-delay-ms: 1000
+
+    # Template configuration
+    templates:
+      cucumber-feature: "classpath:templates/cucumber-feature.ftl"
+      cucumber-steps: "classpath:templates/cucumber-steps.ftl"
+      page-object: "classpath:templates/page-object.ftl"
+      testng-test: "classpath:templates/testng-test.ftl"
+
+    test-generation:
+      draft-folder: "${java.io.tmpdir}/qa-framework-test/AiDraft"
+      committed-folder: "${java.io.tmpdir}/qa-framework-test/committed"
+
+      quality:
+        minimum-score: 50.0  # Lower for tests
+        auto-approve-threshold: 85.0
+
+      cost:
+        max-per-test-usd: 1.00
+        daily-limit-usd: 5.00
+
+      retry:
+        max-attempts: 2  # Reduced for faster tests

@@ -134,7 +134,7 @@ public class ResponseValidator {
         }
 
         // 6. Check response length (prevent token abuse)
-        if (response.length() > 100_00) {
+        if (response.length() > 100_000) {
             builder.addViolation(ViolationType.LENGTH_VIOLATION,
                     "Response exceeds maximum length (100K characters)");
             warnings.add("Response exceeds recommended length");

@@ -25,9 +25,9 @@ import java.util.UUID;
  * CORRECTED VERSION - Uses proper AIGatewayService methods
  */
 @Slf4j
-@Service
 @RequiredArgsConstructor
-public class AITestGenerationService {
+@Service("openAPITestGenerationService")
+public class openAPITestGenerationService {
 
     private final AIGatewayService aiGatewayService;
     private final OpenAPIContextBuilder contextBuilder;
