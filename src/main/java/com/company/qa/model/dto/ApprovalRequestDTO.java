@@ -66,4 +66,49 @@ public class ApprovalRequestDTO {
     private Boolean isPending;
     private Boolean isExpired;
     private Long daysUntilExpiration;
+
+    // Git integration fields
+    private Boolean autoCommitOnApproval;
+
+    /**
+     * Whether Git operation was triggered
+     */
+    private Boolean gitOperationTriggered;
+
+    /**
+     * Whether Git operation completed successfully
+     */
+    private Boolean gitOperationSuccess;
+
+    /**
+     * Git operation error message (if failed)
+     */
+    private String gitErrorMessage;
+
+    /**
+     * Reference to the AI generated test
+     */
+    private UUID aiGeneratedTestId;
+
+    /**
+     * Git branch name
+     */
+    private String gitBranch;
+
+    /**
+     * Git commit SHA
+     */
+    private String gitCommitSha;
+
+    /**
+     * Pull request URL
+     */
+    private String gitPrUrl;
+
+    /**
+     * Timestamp when Git commit was made
+     */
+    private Instant gitCommittedAt;
+
+    // ====
 }

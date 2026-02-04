@@ -37,4 +37,6 @@ public class ApprovalDecisionDTO {
     private UUID reviewerId;
     private String reviewerName;
     private String reviewerEmail;
+    private Boolean skipGitCommit;
+
 }

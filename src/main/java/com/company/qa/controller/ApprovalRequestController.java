@@ -178,4 +178,49 @@ public class ApprovalRequestController {
 
         return ResponseEntity.ok(ApiResponse.success(summary));
     }
+
+   /* Manually trigger Git commit for an approved request
+     * Useful when auto-commit was skipped or failed
+     */
+    @PostMapping("/{id}/trigger-git")
+    public ResponseEntity<ApiResponse<GitOperationResult>> triggerGitCommit(@PathVariable UUID id) {
+        log.info("Manually triggering Git commit for approval: {}", id);
+
+        try {
+            GitOperationResult result = approvalRequestService.manuallyTriggerGitCommit(id);
+
+            String message = result.isSuccess() ?
+                    "Git commit triggered successfully" :
+                    "Git commit failed: " + result.getErrorMessage();
+
+            return ResponseEntity.ok(ApiResponse.success(result, message));
+
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
+     * Retry a failed Git operation
+     */
+    @PostMapping("/{id}/retry-git")
+    public ResponseEntity<ApiResponse<GitOperationResult>> retryGitOperation(@PathVariable UUID id) {
+        log.info("Retrying Git operation for approval: {}", id);
+
+        try {
+            GitOperationResult result = approvalRequestService.retryGitOperation(id);
+
+            String message = result.isSuccess() ?
+                    "Git operation retry successful" :
+                    "Git operation retry failed: " + result.getErrorMessage();
+
+            return ResponseEntity.ok(ApiResponse.success(result, message));
+
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
 }

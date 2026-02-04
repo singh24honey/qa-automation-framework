@@ -211,3 +211,9 @@ jira:
   rate-limit:
     enabled: true
     requests-per-minute: 60
+
+git:
+  enabled: true
+  secrets:
+    enabled: false
+  working-directory: /tmp/qa-framework-test/git-workspace

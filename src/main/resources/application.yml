@@ -83,3 +83,14 @@ jira:
   api:
     connect-timeout-ms: 1000
     read-timeout-ms: 2000
+
+git:
+  enabled: true
+  working-directory: /tmp/qa-framework/git-workspace
+  max-retry-attempts: 3
+  operation-timeout: 300
+  use-ssh: false
+  cleanup-after-operation: true
+  secrets:
+    enabled: true
+    region: us-east-1

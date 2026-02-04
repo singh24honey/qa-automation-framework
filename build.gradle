@@ -119,7 +119,15 @@ dependencies {
     testImplementation 'org.testcontainers:junit-jupiter'
     implementation "org.postgresql:postgresql"
     implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
+    // Git Integration - JGit
+    implementation 'org.eclipse.jgit:org.eclipse.jgit:6.8.0.202311291450-r'
+    implementation 'org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:6.8.0.202311291450-r'
 
+    // GitHub API Client (for PR creation)
+    implementation 'org.kohsuke:github-api:1.318'
+
+    // GitLab API Client (optional, for GitLab support)
+    implementation 'org.gitlab4j:gitlab4j-api:5.5.0'
 
 }
 

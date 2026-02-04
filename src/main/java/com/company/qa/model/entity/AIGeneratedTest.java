@@ -313,4 +313,16 @@ public class AIGeneratedTest extends BaseEntity {  // ✅ Extends BaseEntity for
         private String message;
         private String suggestion;
     }
+
+    @Column(name = "git_branch", length = 255)
+    private String gitBranch;
+
+    @Column(name = "git_commit_sha", length = 255)
+    private String gitCommitSha;
+
+    @Column(name = "git_pr_url", length = 1000)
+    private String gitPrUrl;
+
+    @Column(name = "git_committed_at")
+    private LocalDateTime gitCommittedAt;
 }

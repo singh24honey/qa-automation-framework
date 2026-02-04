@@ -5,6 +5,7 @@ import approvalService from '../../services/approvalService';
 import CodeViewer from './CodeViewer';
 import StatusBadge from './StatusBadge';
 import ApprovalModal from './ApprovalModal';
+import GitStatusBadge from './GitStatusBadge'; // ✅ NEW
 import './ApprovalDetail.css';
 
 const ApprovalDetail = () => {
@@ -31,6 +32,20 @@ const ApprovalDetail = () => {
         }
     }, [id]);
 
+    const handleRetryGit = async (approvalId) => {
+            try {
+                setProcessing(true);
+                await approvalService.retryGitOperation(approvalId);
+                await loadApprovalDetails(); // Refresh
+            } catch (err) {
+                console.error('Error retrying Git operation:', err);
+                alert('Failed to retry Git operation: ' + (err.response?.data?.message || err.message));
+            } finally {
+                setProcessing(false);
+            }
+        };
+
+
     useEffect(() => {
         loadApprovalDetails();
     }, [loadApprovalDetails]);
@@ -49,6 +64,23 @@ const ApprovalDetail = () => {
             setProcessing(false);
         }
     };
+
+    const handleManualGitTrigger = async (approvalId) => {
+            if (!window.confirm('Trigger Git commit for this approval?')) {
+                return;
+            }
+
+            try {
+                setProcessing(true);
+                await approvalService.triggerGitCommit(approvalId);
+                await loadApprovalDetails(); // Refresh
+            } catch (err) {
+                console.error('Error triggering Git commit:', err);
+                alert('Failed to trigger Git commit: ' + (err.response?.data?.message || err.message));
+            } finally {
+                setProcessing(false);
+            }
+        };
 
     const handleReject = async (decision) => {
         try {

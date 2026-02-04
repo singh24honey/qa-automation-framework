@@ -80,4 +80,6 @@ public interface ApprovalRequestRepository extends JpaRepository<ApprovalRequest
             "SUM(CASE WHEN ar.status = 'REJECTED' THEN 1 ELSE 0 END) as rejected " +
             "FROM ApprovalRequest ar")
     Object[] getApprovalStatistics();
+
+    List<ApprovalRequest> findByAiGeneratedTestId(UUID testGenerationId);
 }

@@ -39,7 +39,7 @@ const approvalService = {
      * Get approval request by ID
      */
     getApprovalById: async (id) => {
-        const response = await apiClient.get(`/approvals/${id}`);
+        const response = await apiClient.get('/approvals/${id}');
         return response.data.data;
     },
 
@@ -47,7 +47,7 @@ const approvalService = {
      * Get requests by requester
      */
     getMyRequests: async (requesterId) => {
-        const response = await apiClient.get(`/approvals/requester/${requesterId}`);
+        const response = await apiClient.get('/approvals/requester/${requesterId}');
         return response.data.data;
     },
 
@@ -55,7 +55,7 @@ const approvalService = {
      * Get requests reviewed by me
      */
     getMyReviews: async (reviewerId) => {
-        const response = await apiClient.get(`/approvals/reviewer/${reviewerId}`);
+        const response = await apiClient.get('/approvals/reviewer/${reviewerId}');
         return response.data.data;
     },
 
@@ -63,7 +63,7 @@ const approvalService = {
      * Approve a request
      */
     approveRequest: async (id, decision) => {
-        const response = await apiClient.post(`/approvals/${id}/approve`, decision);
+        const response = await apiClient.post('/approvals/${id}/approve', decision);
         return response.data.data;
     },
 
@@ -71,7 +71,7 @@ const approvalService = {
      * Reject a request
      */
     rejectRequest: async (id, decision) => {
-        const response = await apiClient.post(`/approvals/${id}/reject`, decision);
+        const response = await apiClient.post('/approvals/${id}/reject', decision);
         return response.data.data;
     },
 
@@ -79,7 +79,7 @@ const approvalService = {
      * Cancel a request
      */
     cancelRequest: async (id, userId) => {
-        const response = await apiClient.delete(`/approvals/${id}`, {
+        const response = await apiClient.delete('/approvals/${id}', {
             headers: {
                 'X-User-Id': userId
             }
@@ -101,7 +101,21 @@ const approvalService = {
     createApprovalRequest: async (request) => {
         const response = await apiClient.post('/approvals', request);
         return response.data.data;
-    }
+    },
+
+
+        triggerGitCommit: async (approvalId) => {
+            const response = await apiClient.post('/approvals/${approvalId}/trigger-git');
+            return response.data.data;
+        },
+
+        /**
+         * Retry a failed Git operation
+         */
+        retryGitOperation: async (approvalId) => {
+            const response = await apiClient.post('/approvals/${approvalId}/retry-git');
+            return response.data.data;
+        }
 };
 
 export default approvalService;

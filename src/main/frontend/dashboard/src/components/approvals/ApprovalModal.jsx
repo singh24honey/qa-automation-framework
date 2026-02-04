@@ -10,11 +10,14 @@ const ApprovalModal = ({ type, onConfirm, onCancel, processing }) => {
     const [reviewerEmail] = useState(localStorage.getItem('userEmail') || '');
     const [notes, setNotes] = useState('');
     const [rejectionReason, setRejectionReason] = useState('');
+    const [skipGitCommit, setSkipGitCommit] = useState(false); // ✅ You already have this
+
 
     const isApprove = type === 'approve';
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
 
         // Validation
         if (!isApprove && !rejectionReason.trim()) {
@@ -28,7 +31,9 @@ const ApprovalModal = ({ type, onConfirm, onCancel, processing }) => {
             reviewerName: reviewerName,
             reviewerEmail: reviewerEmail || undefined,
             notes: notes.trim() || undefined,
-            rejectionReason: isApprove ? undefined : rejectionReason.trim()
+            rejectionReason: isApprove ? undefined : rejectionReason.trim(),
+            skipGitCommit: isApprove ? skipGitCommit : undefined  // ✅ ADD THIS LINE
+
         };
 
         onConfirm(decision);
@@ -87,6 +92,28 @@ const ApprovalModal = ({ type, onConfirm, onCancel, processing }) => {
                                 className="textarea-input"
                             />
                         </div>
+
+ {isApprove && (
+                             <div className="form-group">
+                                 <div className="checkbox-wrapper">
+                                     <label className="checkbox-label">
+                                         <input
+                                             type="checkbox"
+                                             checked={skipGitCommit}
+                                             onChange={(e) => setSkipGitCommit(e.target.checked)}
+                                             disabled={processing}
+                                         />
+                                         <span className="checkbox-text">
+                                             Skip Git commit (I'll trigger it manually later)
+                                         </span>
+                                     </label>
+                                     <p className="field-hint">
+                                         By default, approved tests are automatically committed to Git.
+                                         Check this option to defer the Git operation and trigger it manually when ready.
+                                     </p>
+                                 </div>
+                             </div>
+                         )}
 
                         <div className="reviewer-info">
                             <h4>Reviewer Information</h4>

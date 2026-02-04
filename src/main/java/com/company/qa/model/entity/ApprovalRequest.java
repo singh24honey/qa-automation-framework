@@ -123,7 +123,6 @@ public class ApprovalRequest {
             createdAt = Instant.now();
         }
         if (expiresAt == null) {
-            // Default: expires in 7 days
             expiresAt = createdAt.plus(java.time.Duration.ofDays(7));
         }
         if (status == null) {
@@ -138,8 +137,15 @@ public class ApprovalRequest {
         if (redactionCount == null) {
             redactionCount = 0;
         }
-    }
 
+        // ✅ ADD: Git field defaults
+        if (autoCommitOnApproval == null) {
+            autoCommitOnApproval = true;  // Default: auto-commit enabled
+        }
+        if (gitOperationTriggered == null) {
+            gitOperationTriggered = false;
+        }
+    }
     /**
      * Check if request is pending approval.
      */
@@ -168,4 +174,59 @@ public class ApprovalRequest {
         return status == ApprovalStatus.EXPIRED ||
                 (expiresAt != null && Instant.now().isAfter(expiresAt));
     }
+
+    /**
+     * Whether to trigger Git commit automatically upon approval
+     * If false, Git commit must be triggered manually
+     */
+    @Column(name = "auto_commit_on_approval")
+    private Boolean autoCommitOnApproval;
+
+    /**
+     * Whether Git operation was triggered
+     */
+    @Column(name = "git_operation_triggered")
+    private Boolean gitOperationTriggered;
+
+    /**
+     * Whether Git operation completed successfully
+     */
+    @Column(name = "git_operation_success")
+    private Boolean gitOperationSuccess;
+
+    /**
+     * Git operation error message (if failed)
+     */
+    @Column(name = "git_error_message", length = 2000)
+    private String gitErrorMessage;
+
+    /**
+     * Reference to the AI generated test
+     */
+    @Column(name = "ai_generated_test_id")
+    private UUID aiGeneratedTestId;
+
+    /**
+     * Git branch name (populated after successful commit)
+     */
+    @Column(name = "git_branch")
+    private String gitBranch;
+
+    /**
+     * Git commit SHA (populated after successful commit)
+     */
+    @Column(name = "git_commit_sha")
+    private String gitCommitSha;
+
+    /**
+     * Pull request URL (populated after PR creation)
+     */
+    @Column(name = "git_pr_url", length = 1000)
+    private String gitPrUrl;
+
+    /**
+     * Timestamp when Git commit was made
+     */
+    @Column(name = "git_committed_at")
+    private Instant gitCommittedAt;
 }
