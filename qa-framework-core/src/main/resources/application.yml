@@ -1,0 +1,133 @@
+spring:
+  application:
+    name: qa-automation-framework
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.company.qa: DEBUG
+  file:
+    name: ${user.home}/qa-framework/artifacts/logs/application.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+  logging:
+    request:
+      mode: postgres    # postgres | eventbridge | hybrid
+
+# Add to existing application.yml
+jira:
+  # AWS Secrets Manager integration
+  secrets:
+    enabled: true
+    region: ${AWS_REGION:us-east-1}
+    cache-ttl-seconds: 3600 # Cache credentials for 1 hour
+
+  # Default configuration (can be overridden per config)
+  api:
+    connect-timeout-ms: 5000
+    read-timeout-ms: 10000
+    max-retries: 3
+    retry-backoff-ms: 1000
+
+  # Rate limiting
+  rate-limit:
+    requests-per-minute: 60 # JIRA Cloud default
+    burst-capacity: 10
+
+  # Health check
+  health:
+    enabled: true
+    interval-seconds: 300 # Check every 5 minutes
+
+  # Security
+  security:
+    validate-ssl: true
+    allowed-domains:
+      - "*.atlassian.net"
+
+# Spring profiles specific settings
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+jira:
+  secrets:
+    enabled: false # Use mock credentials in tests
+  api:
+    connect-timeout-ms: 1000
+    read-timeout-ms: 2000
+
+git:
+  enabled: true
+  working-directory: /tmp/qa-framework/git-workspace
+  max-retry-attempts: 3
+  operation-timeout: 300
+  use-ssh: false
+  cleanup-after-operation: true
+  secrets:
+    enabled: true
+    region: us-east-1
+
+# ============================================================
+# PLAYWRIGHT CONFIGURATION
+# ============================================================
+playwright:
+  # Enable/disable Playwright
+  enabled: ${PLAYWRIGHT_ENABLED:true}
+
+  # Browser type: chromium, firefox, webkit
+  browser: ${PLAYWRIGHT_BROWSER:firefox}
+
+  # Headless mode (no GUI)
+  headless: ${PLAYWRIGHT_HEADLESS:true}
+
+  # Default timeout in milliseconds
+  timeout: ${PLAYWRIGHT_TIMEOUT:30000}
+
+  # Slow down operations (milliseconds) - for debugging
+  slow-mo: ${PLAYWRIGHT_SLOW_MO:0}
+
+  # Recording options
+  record-video: ${PLAYWRIGHT_RECORD_VIDEO:false}
+  record-trace: ${PLAYWRIGHT_RECORD_TRACE:true}
+
+  # Artifact directories (will be created automatically)
+  screenshot-dir: ${user.home}/qa-framework/artifacts/screenshots
+  trace-dir: ${user.home}/qa-framework/artifacts/traces
+  video-dir: ${user.home}/qa-framework/artifacts/videos
+
+  # Viewport dimensions
+  viewport:
+    width: 1920
+    height: 1080
+
+  # Browser context options
+  accept-downloads: true
+  ignore-https-errors: false

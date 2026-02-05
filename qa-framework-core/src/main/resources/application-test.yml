@@ -1,0 +1,150 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # This will create tables automatically
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        jdbc:
+          lob:
+            non_contextual_creation: true  # Suppress CLOB warning
+
+  flyway:
+    enabled: false
+
+  h2:
+    console:
+      enabled: true
+
+storage:
+  type: local
+  base-path: ${user.home}/qa-framework/artifacts
+  screenshots: ${storage.base-path}/screenshots
+  videos: ${storage.base-path}/videos
+  logs: ${storage.base-path}/logs
+  reports: ${storage.base-path}/reports
+  retention-days: 30
+  max-file-size-mb: 10
+  allowed-extensions:
+    - png
+    - jpg
+    - jpeg
+    - txt
+    - log
+    - html
+    - json
+    - mp4
+  cleanup:
+    enabled: true
+    schedule: "0 0 2 * * *"
+
+logging:
+  level:
+    root: INFO
+    com.company.qa: DEBUG
+    com.company.qa.security: DEBUG
+    com.company.qa.service.storage: DEBUG
+
+selenium:
+  grid-url: http://localhost:4444/wd/hub
+  implicit-wait: 10
+  page-load-timeout: 30
+
+
+execution:
+  timeout-minutes: 10
+  max-concurrent: 3
+  retry:
+    enabled: true
+    max-attempts: 2
+    delay-seconds: 5
+    retry-on-timeout: true
+    retry-on-network-error: true
+    retry-on-assertion-failure: false
+
+
+redis:
+  host: localhost
+  port: 6380  # Your Docker Redis port
+  timeout: 2000ms
+
+jira:
+  secrets:
+    enabled: false  # Uses mock credentials
+  api:
+    connect-timeout-ms: 1000
+    read-timeout-ms: 2000
+  audit:
+    enabled: false
+
+# AI Test Generation Configuration
+ai:
+  test-generation:
+    # Output paths
+    draft-folder: "${user.home}/qa-framework/tests/AiDraft"
+    committed-folder: "${user.home}/qa-framework/tests/src/test"
+
+    # Quality thresholds
+    quality:
+      minimum-score: 60.0
+      auto-approve-threshold: 90.0
+      confidence-threshold: HIGH
+
+    # Cost controls
+    cost:
+      max-per-test-usd: 0.50
+      daily-limit-usd: 1.00
+      alert-threshold-usd: 1.00
+
+    # Retry configuration
+    retry:
+      max-attempts: 3
+      backoff-multiplier: 2
+      initial-delay-ms: 1000
+
+    # Template configuration
+    templates:
+      cucumber-feature: "classpath:templates/cucumber-feature.ftl"
+      cucumber-steps: "classpath:templates/cucumber-steps.ftl"
+      page-object: "classpath:templates/page-object.ftl"
+      testng-test: "classpath:templates/testng-test.ftl"
+
+    test-generation:
+      draft-folder: "${java.io.tmpdir}/qa-framework-test/AiDraft"
+      committed-folder: "${java.io.tmpdir}/qa-framework-test/committed"
+
+      quality:
+        minimum-score: 50.0  # Lower for tests
+        auto-approve-threshold: 85.0
+
+      cost:
+        max-per-test-usd: 1.00
+        daily-limit-usd: 5.00
+
+      retry:
+        max-attempts: 2  # Reduced for faster tests
+
+git:
+  enabled: false
+  secrets:
+    enabled: false
+  working-directory: /tmp/qa-framework-test/git-workspace
+
+# ============================================================
+# PLAYWRIGHT - TEST OVERRIDES
+# ============================================================
+playwright:
+  browser: firefox
+  headless: true       # Always headless in tests (faster)
+  slow-mo: 0           # Fast execution
+  record-video: false  # Don't record videos (saves space)
+  record-trace: false  # Don't record traces (faster)
+  timeout: 10000       # Shorter timeout for tests (10 sec)

@@ -1,1 +1,4 @@
 rootProject.name = 'qa-automation-framework'
+
+include 'qa-framework-core'
+include 'playwright-tests'

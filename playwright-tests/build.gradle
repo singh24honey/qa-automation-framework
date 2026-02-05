@@ -1,0 +1,83 @@
+// playwright-tests/build.gradle
+// Playwright test module - contains Page Objects and Test classes
+
+plugins {
+    id 'java'
+}
+
+ext {
+    playwrightVersion = '1.41.0'
+}
+
+dependencies {
+    // ============================================================
+    // PLAYWRIGHT DEPENDENCIES
+    // ============================================================
+    implementation "com.microsoft.playwright:playwright:${playwrightVersion}"
+
+    // ============================================================
+    // TESTING FRAMEWORKS
+    // ============================================================
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'org.assertj:assertj-core:3.24.2'
+
+    // ============================================================
+    // UTILITIES
+    // ============================================================
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    testImplementation 'org.projectlombok:lombok:1.18.26'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.4.14'
+}
+
+// ============================================================
+// TEST CONFIGURATION
+// ============================================================
+test {
+    useJUnitPlatform()
+
+    // Playwright browser downloads directory
+    systemProperty 'playwright.browsers.path', "${rootProject.buildDir}/playwright-browsers"
+
+    // Test execution configuration
+    maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat = 'full'
+        showStandardStreams = false
+    }
+
+    // Test reporting
+    reports {
+        html.required = true
+        junitXml.required = true
+    }
+}
+
+// ============================================================
+// PLAYWRIGHT-SPECIFIC TASKS
+// ============================================================
+
+// Task to clean Playwright artifacts
+tasks.register('cleanPlaywrightArtifacts', Delete) {
+    description = 'Cleans Playwright test artifacts (screenshots, videos, traces)'
+    group = 'playwright'
+
+    delete fileTree("${projectDir}/test-results") {
+        include '**/*'
+    }
+    delete fileTree("${projectDir}/playwright-report") {
+        include '**/*'
+    }
+}
+
+// Make clean depend on cleanPlaywrightArtifacts
+clean.dependsOn cleanPlaywrightArtifacts
+
+// ============================================================
+// COMPILATION CONFIGURATION
+// ============================================================
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-parameters'
+}
