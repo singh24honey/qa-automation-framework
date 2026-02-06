@@ -72,6 +72,7 @@ public class JiraConfiguration {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+
     }
 
     @PreUpdate

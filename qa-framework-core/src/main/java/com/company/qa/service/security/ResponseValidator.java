@@ -64,6 +64,8 @@ public class ResponseValidator {
             "static org.junit",
             "static org.assertj",
             "io.cucumber",
+            "com.microsoft",
+            "static com.microsoft.playwright.assertions.PlaywrightAssertions.*",
             "com.fasterxml.jackson"
     );
 

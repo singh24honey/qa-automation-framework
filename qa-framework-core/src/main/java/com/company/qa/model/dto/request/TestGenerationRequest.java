@@ -43,4 +43,7 @@ public class TestGenerationRequest {
     // Optional: Skip quality assessment (for testing)
     @Builder.Default
     private boolean skipQualityCheck = false;
+
+    private String UserPrompt; // BEDROCK, OLLAMA, MOCK
+
 }

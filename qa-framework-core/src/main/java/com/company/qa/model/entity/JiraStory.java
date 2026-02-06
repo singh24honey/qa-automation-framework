@@ -188,6 +188,7 @@ public class JiraStory {
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
+
         if (createdAt == null) {
             createdAt = now;
         }
@@ -197,10 +198,18 @@ public class JiraStory {
         if (fetchedAt == null) {
             fetchedAt = now;
         }
-        if (rawJson != null && rawJsonString == null) {
-            setRawJson(rawJson);
+
+        // ✅ ALWAYS guarantee raw_json
+        if (rawJsonString == null) {
+            if (rawJson != null) {
+                setRawJson(rawJson);
+            } else {
+                rawJsonString = "{}";
+            }
         }
-        if (customFields != null && customFieldsString == null) {
+
+        // Optional but consistent
+        if (customFieldsString == null && customFields != null) {
             setCustomFields(customFields);
         }
     }

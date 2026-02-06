@@ -64,6 +64,9 @@ public class TestFileWriterService {
                 case TESTNG:
                     writeTestNGFiles(testFolder, testCode);
                     break;
+                case PLAYWRIGHT:
+                    writePlaywrightFiles(testFolder, testCode);
+                    break;
                 default:
                     throw new StorageException("Failed to write test files");
             }
@@ -140,13 +143,27 @@ public class TestFileWriterService {
         Path folder;
 
         if (test.getTestFramework() == AIGeneratedTest.TestFramework.CUCUMBER) {
+            // Cucumber: src/test/resources/features/ui/
             folder = Paths.get(
                     committedFolderPath,
                     "resources",
                     "features",
                     test.getTestType().name().toLowerCase()
             );
+        } else if (test.getTestFramework() == AIGeneratedTest.TestFramework.PLAYWRIGHT) {
+            // Playwright: playwright-tests/src/test/java/generated/
+            // This should point to the Playwright module's test directory
+            folder = Paths.get(
+                    committedFolderPath,
+                    "playwright-tests",
+                    "src",
+                    "test",
+                    "java",
+                    "generated",
+                    test.getJiraStoryKey()
+            );
         } else {
+            // TestNG, JUnit: src/test/java/com/framework/qa/tests/ui/
             folder = Paths.get(
                     committedFolderPath,
                     "java",
@@ -205,6 +222,107 @@ public class TestFileWriterService {
         }
     }
 
+    private void writePlaywrightFiles(Path folder, Map<String, Object> testCode) throws IOException {
+        log.info("Writing Playwright test files to: {}", folder);
+
+        // 1. Write main test class (required)
+        if (!testCode.containsKey("testClass")) {
+            throw new StorageException("Missing 'testClass' in Playwright test code");
+        }
+
+        String testClassContent = testCode.get("testClass").toString();
+        String testClassName = extractTestClassName(testCode, testClassContent);
+
+        Path testFile = folder.resolve(testClassName + ".java");
+        Files.writeString(testFile, testClassContent);
+        log.debug("Written Playwright test class: {}", testFile);
+
+        // 2. Write new Page Objects (if AI generated any)
+        if (testCode.containsKey("newPagesNeeded")) {
+            Object newPagesObj = testCode.get("newPagesNeeded");
+
+            if (newPagesObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<?> newPagesList = (List<?>) newPagesObj;
+
+                if (!newPagesList.isEmpty() && newPagesList.get(0) instanceof Map) {
+                    Path pagesFolder = folder.resolve("pages");
+                    Files.createDirectories(pagesFolder);
+
+                    for (Object item : newPagesList) {
+                        if (item instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> pageObject = (Map<String, Object>) item;
+
+                            Object classNameObj = pageObject.get("className");
+                            Object classContentObj = pageObject.get("classContent");
+
+                            if (classNameObj != null && classContentObj != null) {
+                                String className = classNameObj.toString();
+                                String classContent = classContentObj.toString();
+
+                                Path pageFile = pagesFolder.resolve(className + ".java");
+                                Files.writeString(pageFile, classContent);
+                                log.debug("Written Playwright page object: {}", pageFile);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Log which existing pages are being reused (informational)
+        if (testCode.containsKey("usesExistingPages")) {
+            Object existingPagesObj = testCode.get("usesExistingPages");
+
+            // Handle both List and Boolean
+            if (existingPagesObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> existingPages = (List<String>) existingPagesObj;
+
+                if (!existingPages.isEmpty()) {
+                    log.info("Test uses existing Page Objects: {}", existingPages);
+                }
+            } else if (existingPagesObj instanceof Boolean) {
+                log.debug("usesExistingPages is boolean: {}", existingPagesObj);
+            }
+        }
+
+        // 4. Write README if provided by AI (optional)
+        if (testCode.containsKey("readme")) {
+            String readmeContent = testCode.get("readme").toString();
+            Path readmeFile = folder.resolve("README.md");
+            Files.writeString(readmeFile, readmeContent);
+            log.debug("Written README: {}", readmeFile);
+        }
+
+        log.info("Playwright test files written successfully");
+    }
+
+    private String extractTestClassName(Map<String, Object> testCode, String testClassContent) {
+        // Try explicit testClassName first
+        if (testCode.containsKey("testClassName")) {
+            return testCode.get("testClassName").toString();
+        }
+
+        // Try extracting from Java class content
+        String extractedName = extractJavaClassName(testClassContent);
+        if (!"GeneratedClass".equals(extractedName)) {
+            return extractedName;
+        }
+
+        // Fallback
+        log.warn("Could not extract test class name, using fallback");
+        return "PlaywrightTest";
+    }
+
+    /**
+     * Extract test class name from testCode or content.
+     * Priority:
+     * 1. Explicit "testClassName" in testCode map
+     * 2. Extract from Java class content
+     * 3. Fallback to "PlaywrightTest"
+     */
     // ============================================================
     // TESTNG FILE WRITING
     // ============================================================

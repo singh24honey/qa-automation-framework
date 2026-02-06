@@ -61,7 +61,7 @@ public class AIConfig {
          */
         private String model = "us.amazon.nova-micro-v1:0"; // Changed default from Claude to Titan
 
-        private Integer maxTokens = 4096;
+        private Integer maxTokens = 8000;
         private Double temperature = 0.7;
         private Integer timeout = 120; // seconds
     }
