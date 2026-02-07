@@ -131,3 +131,8 @@ playwright:
   # Browser context options
   accept-downloads: true
   ignore-https-errors: false
+
+  page-objects:
+    scan-path: src/test/java
+    package-pattern: .*\.pages\..*
+

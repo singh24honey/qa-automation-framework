@@ -1,0 +1,142 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2025-02-06",
+  "defaultStrategy": "role",
+  "pages": {
+    "login": {
+      "url": "/login",
+      "pageObjectClass": "com.company.qa.playwright.pages.LoginPage",
+      "description": "User login page",
+      "elements": {
+        "emailInput": {
+          "strategy": "label",
+          "value": "Email",
+          "playwrightCode": "page.getByLabel(\"Email\")",
+          "description": "Email input field",
+          "fallbacks": [
+            "page.getByPlaceholder(\"Enter email\")",
+            "page.locator(\"#email\")",
+            "page.locator(\"input[type='email']\")"
+          ]
+        },
+        "passwordInput": {
+          "strategy": "label",
+          "value": "Password",
+          "playwrightCode": "page.getByLabel(\"Password\")",
+          "description": "Password input field",
+          "fallbacks": [
+            "page.getByPlaceholder(\"Enter password\")",
+            "page.locator(\"#password\")",
+            "page.locator(\"input[type='password']\")"
+          ]
+        },
+        "submitButton": {
+          "strategy": "role",
+          "value": "button",
+          "options": {
+            "name": "Sign In"
+          },
+          "playwrightCode": "page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(\"Sign In\"))",
+          "description": "Submit login button",
+          "fallbacks": [
+            "page.getByTestId(\"btn-login\")",
+            "page.locator(\"button[type='submit']\")",
+            "page.getByText('Sign In')"
+          ]
+        },
+        "errorMessage": {
+          "strategy": "testid",
+          "value": "login-error",
+          "playwrightCode": "page.getByTestId(\"login-error\")",
+          "description": "Error message display",
+          "fallbacks": [
+            "page.locator(\".error-message\")",
+            "page.getByRole(AriaRole.ALERT)"
+          ]
+        },
+        "forgotPasswordLink": {
+          "strategy": "role",
+          "value": "link",
+          "options": {
+            "name": "Forgot Password"
+          },
+          "playwrightCode": "page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName(\"Forgot Password\"))",
+          "description": "Forgot password link"
+        }
+      }
+    },
+    "dashboard": {
+      "url": "/dashboard",
+      "pageObjectClass": "com.company.qa.playwright.pages.DashboardPage",
+      "description": "Main dashboard after login",
+      "elements": {
+        "welcomeMessage": {
+          "strategy": "testid",
+          "value": "welcome-msg",
+          "playwrightCode": "page.getByTestId(\"welcome-msg\")",
+          "description": "Welcome message banner",
+          "fallbacks": [
+            "page.locator(\".welcome-message\")",
+            "page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName(\"Welcome\"))"
+          ]
+        },
+        "logoutButton": {
+          "strategy": "role",
+          "value": "button",
+          "options": {
+            "name": "Logout"
+          },
+          "playwrightCode": "page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(\"Logout\"))",
+          "description": "Logout button",
+          "fallbacks": [
+            "page.getByTestId(\"btn-logout\")",
+            "page.getByText('Logout')"
+          ]
+        },
+        "userProfileMenu": {
+          "strategy": "testid",
+          "value": "user-profile",
+          "playwrightCode": "page.getByTestId(\"user-profile\")",
+          "description": "User profile dropdown menu",
+          "fallbacks": [
+            "page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(\"Profile\"))"
+          ]
+        }
+      }
+    },
+    "registration": {
+      "url": "/register",
+      "pageObjectClass": "com.company.qa.playwright.pages.RegistrationPage",
+      "description": "New user registration page",
+      "elements": {
+        "firstNameInput": {
+          "strategy": "label",
+          "value": "First Name",
+          "playwrightCode": "page.getByLabel(\"First Name\")",
+          "description": "First name input"
+        },
+        "lastNameInput": {
+          "strategy": "label",
+          "value": "Last Name",
+          "playwrightCode": "page.getByLabel(\"Last Name\")",
+          "description": "Last name input"
+        },
+        "emailInput": {
+          "strategy": "label",
+          "value": "Email",
+          "playwrightCode": "page.getByLabel(\"Email\")",
+          "description": "Email input"
+        },
+        "registerButton": {
+          "strategy": "role",
+          "value": "button",
+          "options": {
+            "name": "Register"
+          },
+          "playwrightCode": "page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(\"Register\"))",
+          "description": "Registration submit button"
+        }
+      }
+    }
+  }
+}

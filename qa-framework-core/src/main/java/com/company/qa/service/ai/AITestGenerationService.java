@@ -139,7 +139,7 @@ public class AITestGenerationService {
         AITestGenerationAttempt attempt = createAttemptRecord(story, request, attemptNumber);
 
         try {
-            // Step 1: Build AI prompt using JiraContextBuilder (Week 9 Day 2)
+
             String prompt = buildGenerationPrompt(story, request);
             attempt.setPromptContext(prompt);
 
@@ -286,10 +286,9 @@ public class AITestGenerationService {
         switch (request.getTestFramework()) {
             case PLAYWRIGHT:
                 // NEW: Use PlaywrightContextBuilder for Playwright tests
-                basePrompt = playwrightContextBuilder.buildPlaywrightTestPrompt(
+                basePrompt = playwrightContextBuilder.buildContext(
                         story,
-                        request.getUserPrompt(),
-                        request.getTestType()
+                        request.getUserPrompt()
                 );
                 log.debug("Using PlaywrightContextBuilder for Playwright framework");
                 break;

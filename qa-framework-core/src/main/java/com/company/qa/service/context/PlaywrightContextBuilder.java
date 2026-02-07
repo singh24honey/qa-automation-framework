@@ -4,11 +4,15 @@ import com.company.qa.model.dto.ParsedAcceptanceCriteria;
 import com.company.qa.model.entity.AIGeneratedTest;
 import com.company.qa.model.entity.JiraStory;
 import com.company.qa.service.parser.AcceptanceCriteriaParser;
+import com.company.qa.service.playwright.ElementRegistryService;
+import com.company.qa.service.playwright.PageObjectRegistryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -51,6 +55,9 @@ import java.util.stream.Collectors;
 public class PlaywrightContextBuilder {
 
     private final AcceptanceCriteriaParser acParser;
+    private final JiraContextBuilder jiraContextBuilder;
+    private final ElementRegistryService elementRegistryService;
+    private final PageObjectRegistryService pageObjectRegistryService;
 
     // ═══════════════════════════════════════════════════════════════════
     // MAIN CONTEXT BUILDING METHODS
@@ -160,6 +167,190 @@ public class PlaywrightContextBuilder {
 
         return result;
     }
+
+    /**
+     * Build complete AI context with registry integration.
+     */
+    public String buildContext(JiraStory story, String openApiContext) {
+        log.info("Building enhanced Playwright context for story: {}", story.getJiraKey());
+
+        StringBuilder context = new StringBuilder();
+
+        // 1. JIRA Story Context
+        context.append("=== JIRA Story Context ===\n");
+        context.append(jiraContextBuilder.buildMinimalPrompt(story));
+        context.append("\n\n");
+
+        // 2. OpenAPI Context (if available)
+        if (openApiContext != null && !openApiContext.trim().isEmpty()) {
+            context.append("=== API Context ===\n");
+            context.append(openApiContext);
+            context.append("\n\n");
+        }
+
+        // 3. Element Registry Context (NEW - Week 13)
+        List<String> relevantPages = extractRelevantPages(story);
+        String elementContext = elementRegistryService.getContextForAIPrompt(relevantPages);
+        context.append(elementContext);
+        context.append("\n");
+
+        // 4. Page Object Registry Context (NEW - Week 13)
+        String pageObjectContext = pageObjectRegistryService.getContextForAIPrompt();
+        context.append(pageObjectContext);
+        context.append("\n");
+
+        // 5. Playwright Best Practices
+        context.append(getPlaywrightGuidance());
+        context.append("\n\n");
+
+        // 6. Output Format Instructions
+        context.append(getOutputFormatInstructions());
+
+        log.debug("Built context: {} characters", context.length());
+        return context.toString();
+    }
+
+    /**
+     * Extract relevant page names from story context.
+     *
+     * Looks for common page keywords in summary and acceptance criteria.
+     */
+    private List<String> extractRelevantPages(JiraStory story) {
+        List<String> pages = new ArrayList<>();
+
+        String searchText = (story.getSummary() + " " +
+                story.getAcceptanceCriteria()).toLowerCase();
+
+        // Common page patterns
+        if (searchText.contains("login") || searchText.contains("sign in")) {
+            pages.add("login");
+        }
+        if (searchText.contains("dashboard") || searchText.contains("home")) {
+            pages.add("dashboard");
+        }
+        if (searchText.contains("register") || searchText.contains("sign up")) {
+            pages.add("registration");
+        }
+        if (searchText.contains("profile") || searchText.contains("account")) {
+            pages.add("profile");
+        }
+        if (searchText.contains("checkout") || searchText.contains("cart")) {
+            pages.add("checkout");
+        }
+
+        log.debug("Identified relevant pages: {}", pages);
+        return pages;
+    }
+
+    /**
+     * Playwright locator strategy guidance.
+     */
+    private String getPlaywrightGuidance() {
+        return """
+=== Playwright Locator Strategy (CRITICAL) ===
+
+Use locators in this priority order:
+
+1. Role-based (BEST for accessibility):
+   page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Sign In"))
+   page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Email"))
+
+2. Label-based (for form fields):
+   page.getByLabel("Email")
+   page.getByLabel("Password")
+
+3. Placeholder-based:
+   page.getByPlaceholder("Enter your email")
+
+4. Test ID (when available in Element Registry):
+   page.getByTestId("login-error")
+
+5. Text content:
+   page.getByText("Welcome back")
+
+6. CSS/XPath (LAST RESORT - avoid if possible):
+   page.locator("#email-input")
+
+=== IMPORTANT INSTRUCTIONS ===
+
+1. **CHECK ELEMENT REGISTRY FIRST**: If an element is listed in the Element Registry above, 
+   USE THE EXACT locator code provided. Do NOT create your own locator for that element.
+
+2. **CHECK PAGE OBJECT REGISTRY**: If a Page Object exists for the page you're testing,
+   USE the existing methods instead of writing raw Playwright code in the test.
+   Example: Use loginPage.login(email, password) instead of page.getByLabel("Email").fill(...)
+
+3. **Only create NEW Page Objects if**:
+   - No existing Page Object handles this page
+   - The test requires new methods not in existing Page Objects
+
+4. **Test Structure**:
+   - Extend BasePlaywrightTest
+   - Use JUnit 5 (@Test annotation)
+   - Include meaningful assertions
+   - Add comments for complex logic
+
+5. **Naming Conventions**:
+   - Test class: {StoryKey}_{Feature}Test (e.g., PROJ123_LoginTest)
+   - Test methods: test{Scenario}() (e.g., testUserCanLoginWithValidCredentials)
+""";
+    }
+
+    /**
+     * JSON output format instructions.
+     */
+    private String getOutputFormatInstructions() {
+        return """
+=== Output Format (STRICT) ===
+
+Return ONLY valid JSON (no markdown, no code blocks):
+
+{
+  "testClassName": "PROJ123_LoginTest",
+  "testClass": "package com.company.qa.playwright.generated;\\n\\nimport com.microsoft.playwright.*;\\nimport org.junit.jupiter.api.*;\\nimport static com.microsoft.playwright.assertions.PlaywrightAssertions.*;\\n\\npublic class PROJ123_LoginTest extends BasePlaywrightTest {\\n    \\n    @Test\\n    public void testUserCanLoginSuccessfully() {\\n        page.navigate(\\"https://example.com/login\\");\\n        page.getByLabel(\\"Email\\").fill(\\"user@example.com\\");\\n        page.getByLabel(\\"Password\\").fill(\\"password123\\");\\n        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(\\"Sign In\\")).click();\\n        \\n        assertThat(page).hasURL(Pattern.compile(\\".*dashboard\\"));\\n    }\\n}",
+  "usesExistingPages": ["LoginPage"],
+  "newPagesNeeded": []
+}
+
+Field explanations:
+- testClassName: Name of the test class
+- testClass: Complete Java test class code as a string (escape quotes and newlines)
+- usesExistingPages: List of existing Page Object class names referenced
+- newPagesNeeded: Array of new Page Objects to create (only if absolutely necessary)
+  Format: [{"className": "NewPage", "classContent": "full Java code"}]
+
+CRITICAL: 
+- Return ONLY the JSON object
+- No ```json or ``` markers
+- No explanatory text before or after
+- Properly escape all quotes and newlines in the Java code
+""";
+    }
+
+    /**
+     * Build context without registry (fallback for backward compatibility).
+     */
+    public String buildBasicContext(JiraStory story, String openApiContext) {
+        log.warn("Using basic context without registry integration");
+
+        StringBuilder context = new StringBuilder();
+        context.append("=== JIRA Story Context ===\n");
+        context.append(jiraContextBuilder.buildMinimalPrompt(story));
+        context.append("\n\n");
+
+        if (openApiContext != null && !openApiContext.trim().isEmpty()) {
+            context.append("=== API Context ===\n");
+            context.append(openApiContext);
+            context.append("\n\n");
+        }
+
+        context.append(getPlaywrightGuidance());
+        context.append("\n\n");
+        context.append(getOutputFormatInstructions());
+
+        return context.toString();
+    }
+
 
     /**
      * Build minimal prompt for quick Playwright test generation.
