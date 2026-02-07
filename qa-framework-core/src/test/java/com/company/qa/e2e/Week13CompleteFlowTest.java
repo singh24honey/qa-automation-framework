@@ -30,9 +30,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests: JIRA Story → Enhanced Context → AI Generation → Test File
  */
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("test")
 @DisplayName("Week 13 - Complete End-to-End Integration Test")
-class Week13CompleteFlowTest  {
+class Week13CompleteFlowTest extends PostgresIntegrationTest {
 
     @Autowired
     private AITestGenerationService aiTestGenerationService;

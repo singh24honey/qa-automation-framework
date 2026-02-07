@@ -9,6 +9,7 @@ import com.company.qa.repository.AIGeneratedTestRepository;
 import com.company.qa.repository.AITestGenerationAttemptRepository;
 import com.company.qa.repository.JiraStoryRepository;
 import com.company.qa.service.ai.AITestGenerationService;
+import com.company.qa.testsupport.PostgresIntegrationTest;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,10 +57,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @since Week 11 Day 5
  */
 @SpringBootTest
-@ActiveProfiles("dev")
+@ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("E2E: JIRA → AI → Playwright Test Generation")
-class JiraToPlaywrightE2ETest {
+class JiraToPlaywrightE2ETest extends PostgresIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(JiraToPlaywrightE2ETest.class);
 
