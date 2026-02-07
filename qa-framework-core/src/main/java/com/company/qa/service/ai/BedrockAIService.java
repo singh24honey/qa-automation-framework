@@ -101,8 +101,12 @@ public class BedrockAIService implements AIService {
     @PreDestroy
     public void cleanup() {
         if (bedrockClient != null) {
-            log.info("Closing Bedrock client");
-            bedrockClient.close();
+            try {
+                bedrockClient.close();
+                log.info("Closed Bedrock client");
+            } catch (Exception e) {
+                log.warn("Error closing Bedrock client", e);
+            }
         }
     }
 

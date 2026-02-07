@@ -57,10 +57,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @since Week 11 Day 5
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("dev")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("E2E: JIRA → AI → Playwright Test Generation")
-class JiraToPlaywrightE2ETest extends PostgresIntegrationTest {
+class JiraToPlaywrightE2ETest  {
 
     private static final Logger log = LoggerFactory.getLogger(JiraToPlaywrightE2ETest.class);
 

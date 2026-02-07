@@ -159,6 +159,31 @@ public class JiraStoryService {
     }
 
     /**
+     * Get JIRA story by key (from database or fetch if not exists).
+     *
+     * This is the method used by AgentTool implementations.
+     *
+     * @param jiraKey JIRA issue key (e.g., "PROJ-123")
+     * @return JIRA story entity
+     * @throws JiraIntegrationException if story not found and fetch fails
+     */
+    public JiraStory getStoryByKey(String jiraKey) {
+        log.debug("Getting JIRA story: {}", jiraKey);
+
+        // First check database
+        Optional<JiraStory> existing = storyRepository.findByJiraKey(jiraKey);
+
+        if (existing.isPresent()) {
+            log.debug("Found JIRA story in database: {}", jiraKey);
+            return existing.get();
+        }
+
+        // Not in database - fetch from JIRA
+        log.info("JIRA story not in database, fetching from JIRA: {}", jiraKey);
+        return fetchStory(jiraKey, "system");
+    }
+
+    /**
      * Parse acceptance criteria for a story
      * Useful for immediate AC analysis without AI generation
      *
@@ -587,6 +612,8 @@ public class JiraStoryService {
             );
         }
     }
+
+
 }
 
 // ... (continue in Part 4) ...

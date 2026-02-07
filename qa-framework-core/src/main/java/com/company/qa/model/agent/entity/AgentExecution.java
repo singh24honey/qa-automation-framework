@@ -5,10 +5,8 @@ import com.company.qa.model.enums.AgentStatus;
 import com.company.qa.model.enums.AgentType;
 import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.Type;
 
 import java.math.BigDecimal;
@@ -16,23 +14,13 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Entity for tracking agent execution lifecycle.
- *
- * Maps to agent_executions table.
- * Stores high-level execution metadata.
- *
- * Used by:
- * - AgentOrchestrator to manage agent lifecycle
- * - Analytics services for execution tracking
- * - REST API for status queries
- */
 @Entity
 @Table(name = "agent_executions")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 public class AgentExecution extends BaseEntity {
 
     @Id
@@ -48,10 +36,6 @@ public class AgentExecution extends BaseEntity {
     @Column(name = "status", nullable = false, length = 50)
     private AgentStatus status;
 
-    /**
-     * Goal being pursued (stored as JSONB).
-     * Maps to AgentGoal object serialized to JSON.
-     */
     @Type(JsonBinaryType.class)
     @Column(name = "goal", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> goal;
@@ -74,18 +58,10 @@ public class AgentExecution extends BaseEntity {
     @Column(name = "triggered_by_name", length = 255)
     private String triggeredByName;
 
-    /**
-     * Final result (stored as JSONB).
-     * Maps to AgentResult object.
-     */
     @Type(JsonBinaryType.class)
     @Column(name = "result", columnDefinition = "jsonb")
     private Map<String, Object> result;
 
-    /**
-     * Work products/outputs (stored as JSONB).
-     * Examples: {"testFilePath": "...", "pullRequestUrl": "..."}
-     */
     @Type(JsonBinaryType.class)
     @Column(name = "outputs", columnDefinition = "jsonb")
     private Map<String, Object> outputs;
@@ -99,25 +75,14 @@ public class AgentExecution extends BaseEntity {
     @Column(name = "total_actions")
     private Integer totalActions;
 
-    @Version
-    @Column(name = "version")
-    private Long version;
-
-    /**
-     * Calculate execution duration.
-     */
     public Long getDurationSeconds() {
         if (startedAt == null) {
             return null;
         }
-
         Instant end = completedAt != null ? completedAt : Instant.now();
         return java.time.Duration.between(startedAt, end).getSeconds();
     }
 
-    /**
-     * Check if execution is in terminal state.
-     */
     public boolean isComplete() {
         return status == AgentStatus.SUCCEEDED
                 || status == AgentStatus.FAILED

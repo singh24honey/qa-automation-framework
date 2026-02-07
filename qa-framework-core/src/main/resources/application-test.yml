@@ -73,7 +73,7 @@ execution:
 
 redis:
   host: localhost
-  port: 6380  # Your Docker Redis port
+  port: 6379  # Your Docker Redis port
   timeout: 2000ms
 
 jira:

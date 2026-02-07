@@ -264,3 +264,14 @@ playwright:
   record-trace: true   # Capture traces
   timeout: 60000       # Longer timeout for debugging (60 sec)
 
+
+# Agent Configuration
+agent:
+  memory:
+    ttl-hours: 24
+    key-prefix: "agent:context:"
+
+  execution:
+    default-max-iterations: 20
+    default-max-cost: 5.0
+    approval-timeout-seconds: 3600

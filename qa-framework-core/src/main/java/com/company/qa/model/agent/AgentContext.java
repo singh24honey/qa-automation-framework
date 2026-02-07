@@ -1,5 +1,6 @@
 package com.company.qa.model.agent;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -149,6 +150,7 @@ public class AgentContext {
     /**
      * Check if max iterations reached.
      */
+    @JsonIgnore
     public boolean isMaxIterationsReached() {
         return currentIteration >= maxIterations;
     }
