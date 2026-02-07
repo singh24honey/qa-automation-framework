@@ -3,11 +3,14 @@ package com.company.qa.service.agent;
 import com.company.qa.model.agent.*;
 import com.company.qa.model.enums.AgentActionType;
 import com.company.qa.model.enums.AgentStatus;
+import com.company.qa.model.enums.AgentType;
+import com.company.qa.service.agent.tool.AgentToolRegistry;
 import com.company.qa.service.ai.AIBudgetService;
 import com.company.qa.service.ai.AIGatewayService;
 import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -51,6 +54,13 @@ public abstract class BaseAgent {
     // ========== CONFIGURATION ==========
 
     protected final AgentConfig config;
+    protected abstract AgentType getAgentType();
+
+    @Autowired
+    protected AgentExecutionService executionService;
+
+    @Autowired
+    protected AgentToolRegistry toolRegistry;
 
     /**
      * Constructor - all services injected by Spring.
@@ -82,7 +92,7 @@ public abstract class BaseAgent {
      * - Agent checks if goal achieved
      * - Repeat until done or timeout
      */
-    public AgentResult execute(AgentGoal goal) {
+    public AgentResult executeOld(AgentGoal goal) {
         log.info("🤖 Agent starting execution for goal: {}", goal.getGoalType());
 
         Instant startTime = Instant.now();
@@ -161,6 +171,228 @@ public abstract class BaseAgent {
         }
     }
 
+
+    // ========== CORRECTED EXECUTE METHOD ==========
+
+    //@Override
+    public AgentResult execute(AgentGoal goal, AgentConfig config, UUID executionId) {
+        log.info("🤖 Starting agent execution: {} - Goal: {}", getAgentType(), goal.getGoalType());
+
+        // Initialize context
+        AgentContext context = initializeContext(goal, config);
+
+        // Create execution record in database
+        updateExecution(executionId, context, AgentStatus.RUNNING);
+
+        try {
+            // Main agent loop
+            while (context.getCurrentIteration() < context.getMaxIterations()) {
+
+                // Save context to Redis (for resume capability)
+                saveContext(executionId, context);
+
+                // Check if goal achieved
+                if (isGoalAchieved(context)) {
+                    log.info("✅ Goal achieved at iteration {}", context.getCurrentIteration());
+                    AgentResult result = buildSuccessResult(context, executionId);
+                    executionService.recordResult(executionId, result);
+                    updateExecution(executionId, context, AgentStatus.SUCCEEDED);
+                    return result;
+                }
+
+                // Plan next action
+                AgentPlan plan = plan(context);
+                log.debug("📋 Plan: {} (confidence: {})", plan.getNextAction(), plan.getConfidence());
+
+                // Check if approval needed
+                if (requiresApproval(plan, config)) {
+                    log.info("⏸️  Action requires approval: {}", plan.getNextAction());
+                    updateExecution(executionId, context, AgentStatus.WAITING_FOR_APPROVAL);
+                    // In real implementation, would wait for approval here
+                    // For now, we'll assume approval granted
+                }
+
+                // Execute action
+                long startTime = System.currentTimeMillis();
+                ActionResult actionResult = executeAction(plan.getNextAction(), plan.getActionParameters(), context);
+                long duration = System.currentTimeMillis() - startTime;
+
+                // Record action in history
+                AgentHistoryEntry historyEntry = AgentHistoryEntry.builder()
+                        .actionType(plan.getNextAction())
+                        .actionInput(plan.getActionParameters())
+                        .actionOutput(actionResult.getOutput())
+                        .success(actionResult.isSuccess())
+                        .errorMessage(actionResult.getErrorMessage())
+                        .durationMs((int) duration)
+                        .aiCost(actionResult.getAiCost())
+                        .build();
+
+                context.addToHistory(historyEntry);
+
+                // Save action to database
+                saveAction(executionId, context, historyEntry);
+
+                // Update context
+                if (actionResult.isSuccess()) {
+                    // Add any work products from action result
+                    if (actionResult.getOutput() != null) {
+                        actionResult.getOutput().forEach(context::putWorkProduct);
+                    }
+                }
+
+                // Update AI cost
+                if (actionResult.getAiCost() != null) {
+                    context.addAICost(actionResult.getAiCost());
+                }
+
+                // Check budget
+                if (context.getTotalAICost() > config.getMaxAICost()) {
+                    log.warn("💰 Budget exceeded: ${} > ${}", context.getTotalAICost(), config.getMaxAICost());
+                    AgentResult result = buildBudgetExceededResult(context, executionId);
+                    executionService.recordResult(executionId, result);
+                    updateExecution(executionId, context, AgentStatus.BUDGET_EXCEEDED);
+                    return result;
+                }
+
+                // Increment iteration
+                context.incrementIteration();
+                updateExecution(executionId, context, AgentStatus.RUNNING);
+            }
+
+            // Max iterations reached
+            log.warn("⏱️  Max iterations reached: {}", context.getMaxIterations());
+            AgentResult result = buildTimeoutResult(context, executionId);
+            executionService.recordResult(executionId, result);
+            updateExecution(executionId, context, AgentStatus.TIMEOUT);
+            return result;
+
+        } catch (Exception e) {
+            log.error("❌ Agent execution failed", e);
+            executionService.recordError(executionId, e.getMessage());
+            updateExecution(executionId, context, AgentStatus.FAILED);
+            return buildFailureResult(context, executionId, e);
+
+        } finally {
+            // Cleanup
+            memoryService.clearContext(executionId);
+        }
+    }
+
+// ========== MISSING HELPER METHODS (ADD ALL OF THESE) ==========
+
+    /**
+     * Check if action requires approval.
+     */
+    protected boolean requiresApproval(AgentPlan plan, AgentConfig config) {
+        // Check if plan itself requires approval
+        if (plan.isRequiresApproval()) {
+            return true;
+        }
+
+        // Check config's always-approve list
+        if (config.getActionsRequiringApproval() != null &&
+                config.getActionsRequiringApproval().contains(plan.getNextAction())) {
+            return true;
+        }
+
+        // Check config's never-approve list (takes precedence)
+        if (config.getActionsNeverRequiringApproval() != null &&
+                config.getActionsNeverRequiringApproval().contains(plan.getNextAction())) {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Initialize context from goal and config.
+     */
+    protected AgentContext initializeContext(AgentGoal goal, AgentConfig config) {
+        return AgentContext.builder()
+                .goal(goal)
+                .currentIteration(0)
+                .maxIterations(config.getMaxIterations())
+                .startedAt(Instant.now())
+                .lastUpdatedAt(Instant.now())
+                .totalAICost(0.0)
+                .build();
+    }
+
+    /**
+     * Build success result.
+     */
+    protected AgentResult buildSuccessResult(AgentContext context, UUID executionId) {
+        return AgentResult.builder()
+                .executionId(executionId)
+                .status(AgentStatus.SUCCEEDED)
+                .goal(context.getGoal())
+                .iterationsCompleted(context.getCurrentIteration())
+                .outputs(context.getWorkProducts())
+                .totalAICost(context.getTotalAICost())
+                .totalDuration(Duration.between(context.getStartedAt(), Instant.now()))
+                .startedAt(context.getStartedAt())
+                .completedAt(Instant.now())
+                .summary("Goal achieved successfully after " + context.getCurrentIteration() + " iterations")
+                .build();
+    }
+
+    /**
+     * Build budget exceeded result.
+     */
+    protected AgentResult buildBudgetExceededResult(AgentContext context, UUID executionId) {
+        return AgentResult.builder()
+                .executionId(executionId)
+                .status(AgentStatus.BUDGET_EXCEEDED)
+                .goal(context.getGoal())
+                .iterationsCompleted(context.getCurrentIteration())
+                .outputs(context.getWorkProducts())
+                .errorMessage("Budget exceeded: $" + context.getTotalAICost())
+                .totalAICost(context.getTotalAICost())
+                .totalDuration(Duration.between(context.getStartedAt(), Instant.now()))
+                .startedAt(context.getStartedAt())
+                .completedAt(Instant.now())
+                .summary("Stopped due to budget limit")
+                .build();
+    }
+
+    /**
+     * Build timeout result.
+     */
+    protected AgentResult buildTimeoutResult(AgentContext context, UUID executionId) {
+        return AgentResult.builder()
+                .executionId(executionId)
+                .status(AgentStatus.TIMEOUT)
+                .goal(context.getGoal())
+                .iterationsCompleted(context.getCurrentIteration())
+                .outputs(context.getWorkProducts())
+                .errorMessage("Max iterations reached: " + context.getMaxIterations())
+                .totalAICost(context.getTotalAICost())
+                .totalDuration(Duration.between(context.getStartedAt(), Instant.now()))
+                .startedAt(context.getStartedAt())
+                .completedAt(Instant.now())
+                .summary("Timeout after " + context.getMaxIterations() + " iterations")
+                .build();
+    }
+
+    /**
+     * Build failure result.
+     */
+    protected AgentResult buildFailureResult(AgentContext context, UUID executionId, Exception e) {
+        return AgentResult.builder()
+                .executionId(executionId)
+                .status(AgentStatus.FAILED)
+                .goal(context.getGoal())
+                .iterationsCompleted(context.getCurrentIteration())
+                .outputs(context.getWorkProducts())
+                .errorMessage(e.getMessage())
+                .totalAICost(context.getTotalAICost())
+                .totalDuration(Duration.between(context.getStartedAt(), Instant.now()))
+                .startedAt(context.getStartedAt())
+                .completedAt(Instant.now())
+                .summary("Failed with error: " + e.getMessage())
+                .build();
+    }
     /**
      * Initialize agent context.
      */
@@ -322,4 +554,77 @@ public abstract class BaseAgent {
      * @return true if goal achieved
      */
     protected abstract boolean isGoalAchieved(AgentContext context);
+
+    /**
+     * Save current context to Redis.
+     *
+     * Called after each iteration.
+     */
+    protected void saveContext(UUID executionId, AgentContext context) {
+        try {
+            memoryService.saveContext(executionId, context);
+            log.debug("💾 Saved context for execution: {}", executionId);
+        } catch (Exception e) {
+            log.error("Failed to save context: {}", executionId, e);
+            // Don't fail execution on save error
+        }
+    }
+
+    /**
+     * Load context from Redis.
+     *
+     * Used for resuming executions.
+     */
+    protected AgentContext loadContext(UUID executionId) {
+        try {
+            AgentContext context = memoryService.loadContext(executionId);
+            if (context != null) {
+                log.debug("📂 Loaded context for execution: {}", executionId);
+                return context;
+            }
+        } catch (Exception e) {
+            log.error("Failed to load context: {}", executionId, e);
+        }
+        return null;
+    }
+
+    /**
+     * Save action to database.
+     *
+     * Called after each action execution.
+     */
+    protected void saveAction(UUID executionId, AgentContext context, AgentHistoryEntry action) {
+        try {
+            executionService.saveAction(executionId, context.getCurrentIteration(), action);
+        } catch (Exception e) {
+            log.error("Failed to save action: {}", executionId, e);
+            // Don't fail execution on save error
+        }
+    }
+
+    /**
+     * Update execution in database.
+     *
+     * Called periodically and at completion.
+     */
+    protected void updateExecution(UUID executionId, AgentContext context, AgentStatus status) {
+        try {
+            executionService.updateExecution(executionId, context, status);
+        } catch (Exception e) {
+            log.error("Failed to update execution: {}", executionId, e);
+        }
+    }
+
+    /**
+     * Execute tool using registry.
+     *
+     * Replaces direct service calls.
+     */
+    protected Map<String, Object> executeTool(AgentActionType actionType, Map<String, Object> parameters) {
+        if (!toolRegistry.hasToolFor(actionType)) {
+            throw new IllegalStateException("No tool registered for action: " + actionType);
+        }
+
+        return toolRegistry.executeTool(actionType, parameters);
+    }
 }

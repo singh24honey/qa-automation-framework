@@ -50,7 +50,7 @@ public class ActionResult {
     /**
      * How long the action took (milliseconds).
      */
-    private Long durationMs;
+    private Integer durationMs;
 
     /**
      * AI cost for this action.

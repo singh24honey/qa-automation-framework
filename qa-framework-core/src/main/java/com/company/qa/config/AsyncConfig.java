@@ -29,4 +29,15 @@ public class AsyncConfig implements AsyncConfigurer {
     public Executor getAsyncExecutor() {
         return taskExecutor();
     }
+
+    @Bean(name = "agentExecutor")
+    public Executor agentExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(25);
+        executor.setThreadNamePrefix("agent-exec-");
+        executor.initialize();
+        return executor;
+    }
 }
