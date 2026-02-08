@@ -55,5 +55,5 @@ public enum AgentActionType {
     INITIALIZE,
     FINALIZE,
     ABORT,
-    RETRY_ACTION
+    COMPLETE, RETRY_ACTION
 }
