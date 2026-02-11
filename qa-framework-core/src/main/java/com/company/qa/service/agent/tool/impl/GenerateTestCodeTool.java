@@ -120,7 +120,7 @@ public class GenerateTestCodeTool implements AgentTool {
             // 5. Extract test code from response
             // The testCode is a Map<String, Object> containing the generated files
             Map<String, Object> testCode = response.getTestCode();
-            String testClassName = response.getTestName();
+            //String testClassName = response.getTestName();
             String testFilePath = response.getDraftFolderPath();
 
             // 6. Build success result
@@ -128,11 +128,15 @@ public class GenerateTestCodeTool implements AgentTool {
             result.put("success", true);
             result.put("testCode", extractMainTestCode(testCode));  // Extract main test file
             result.put("testCodeMap", testCode);  // Full map (may contain multiple files)
-            result.put("testClassName", testClassName);
+           // result.put("testClassName", testClassName);
             result.put("testFilePath", testFilePath);
             result.put("jiraKey", jiraKey);
             result.put("framework", framework.name());
             result.put("testType", testType.name());
+
+            String testClassName = generateTestClassName(jiraKey);
+            result.put("testClassName", testClassName);
+            result.put("fileName", testClassName + ".java");
 
             // AI metadata
             result.put("aiCost", response.getTotalCostUsd());
@@ -214,5 +218,24 @@ public class GenerateTestCodeTool implements AgentTool {
                 .map(v -> (String) v)
                 .findFirst()
                 .orElse("");
+    }
+
+    /**
+     * Generate test class name from JIRA key
+     * SAUCE-001 → Sauce001Test
+     * SAUCE-LOGIN → SauceLoginTest
+     */
+    private String generateTestClassName(String jiraKey) {
+        // Remove hyphen and capitalize
+        String[] parts = jiraKey.split("-");
+        StringBuilder className = new StringBuilder();
+
+        for (String part : parts) {
+            className.append(part.substring(0, 1).toUpperCase())
+                    .append(part.substring(1).toLowerCase());
+        }
+
+        className.append("Test");
+        return className.toString();
     }
 }

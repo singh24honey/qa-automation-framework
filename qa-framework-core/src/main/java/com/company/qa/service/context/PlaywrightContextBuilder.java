@@ -15,6 +15,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
+import java.io.InputStream;
+
 /**
  * Week 12 Day 1-2: Playwright Context Builder
  *
@@ -188,17 +193,32 @@ public class PlaywrightContextBuilder {
             context.append("\n\n");
         }
 
-        // 3. Element Registry Context (NEW - Week 13)
-        List<String> relevantPages = extractRelevantPages(story);
-        String elementContext = elementRegistryService.getContextForAIPrompt(relevantPages);
-        context.append(elementContext);
-        context.append("\n");
+        if (isSauceDemoStory(story)) {
+            context.append("=== Sauce Demo Application Context ===\n");
+            context.append("Base URL: https://www.saucedemo.com\n");
+            context.append("Test Credentials: standard_user / secret_sauce\n");
+            context.append("Framework: Playwright Java\n");
+            context.append("Base Class: extends BasePlaywrightTest\n");
+            context.append("\n");
 
-        // 4. Page Object Registry Context (NEW - Week 13)
-        String pageObjectContext = pageObjectRegistryService.getContextForAIPrompt();
-        context.append(pageObjectContext);
-        context.append("\n");
+            // Load Sauce Demo specific element registry
+            context.append(getSauceDemoElementContext(story));
+            context.append("\n");
 
+
+        }
+
+       if(!isSauceDemoStory(story)) { // 3. Element Registry Context (NEW - Week 13)
+           List<String> relevantPages = extractRelevantPages(story);
+           String elementContext = elementRegistryService.getContextForAIPrompt(relevantPages);
+           context.append(elementContext);
+           context.append("\n");
+
+           // 4. Page Object Registry Context (NEW - Week 13)
+           String pageObjectContext = pageObjectRegistryService.getContextForAIPrompt();
+           context.append(pageObjectContext);
+           context.append("\n");
+       }
         // 5. Playwright Best Practices
         context.append(getPlaywrightGuidance());
         context.append("\n\n");
@@ -782,5 +802,108 @@ CRITICAL:
                 testType,
                 countSections(prompt),
                 prompt.length());
+    }
+
+    /**
+     * Check if story is for Sauce Demo application
+     */
+    private boolean isSauceDemoStory(JiraStory story) {
+        String content = (story.getJiraKey() + " " +
+                story.getSummary() + " " +
+                story.getDescription()).toLowerCase();
+        return content.contains("sauce") ||
+                content.contains("saucedemo") ;
+                //story.getLabels() != null && story.getLabels().contains("sauce-demo");
+    }
+
+    /**
+     * Get Sauce Demo specific element context
+     */
+    private String getSauceDemoElementContext(JiraStory story) {
+        StringBuilder context = new StringBuilder();
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            // Load Sauce Demo element registry
+            ClassPathResource resource = new ClassPathResource(
+                    "playwright/element-registry-saucedemo.json");
+
+            try (InputStream is = resource.getInputStream()) {
+                JsonNode registry = objectMapper.readTree(is);
+                JsonNode pages = registry.get("pages");
+
+                // Identify relevant Sauce Demo pages
+                List<String> relevantPages = identifySauceDemoPages(story);
+
+                if (!relevantPages.isEmpty()) {
+                    context.append("Available Sauce Demo Page Elements:\n\n");
+
+                    for (String pageName : relevantPages) {
+                        context.append(buildSauceDemoPageContext(pages, pageName));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not load Sauce Demo element registry: {}", e.getMessage());
+        }
+
+        return context.toString();
+    }
+
+    /**
+     * Identify relevant Sauce Demo pages from story
+     */
+    private List<String> identifySauceDemoPages(JiraStory story) {
+        List<String> pages = new ArrayList<>();
+        String content = (story.getSummary() + " " +
+                story.getDescription() + " " +
+                story.getAcceptanceCriteria()).toLowerCase();
+
+        if (content.contains("login") || content.contains("log in")) {
+            pages.add("LoginPage");
+        }
+        if (content.contains("product") || content.contains("inventory") ||
+                content.contains("add to cart")) {
+            pages.add("ProductsPage");
+        }
+        if (content.contains("cart") || content.contains("shopping cart")) {
+            pages.add("CartPage");
+        }
+        if (content.contains("checkout") || content.contains("shipping")) {
+            pages.add("CheckoutInfoPage");
+            pages.add("CheckoutOverviewPage");
+        }
+        if (content.contains("confirmation") || content.contains("complete")) {
+            pages.add("CheckoutCompletePage");
+        }
+
+        return pages;
+    }
+
+    /**
+     * Build context for a specific Sauce Demo page
+     */
+    private String buildSauceDemoPageContext(JsonNode pages, String pageName) {
+        StringBuilder context = new StringBuilder();
+
+        for (JsonNode page : pages) {
+            if (page.get("name").asText().equals(pageName)) {
+                context.append("Page: ").append(pageName).append("\n");
+
+                JsonNode elements = page.get("elements");
+                for (JsonNode element : elements) {
+                    String elemName = element.get("name").asText();
+                    String primarySelector = element.get("primarySelector").asText();
+
+                    context.append("  - ").append(elemName)
+                            .append(": ").append(primarySelector).append("\n");
+                }
+
+                context.append("\n");
+                break;
+            }
+        }
+
+        return context.toString();
     }
 }

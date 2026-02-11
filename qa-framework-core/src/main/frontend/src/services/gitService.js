@@ -51,7 +51,7 @@ const gitService = {
      * Get Git configuration by ID
      */
     getConfigurationById: async (id) => {
-        const response = await apiClient.get('/git/configurations/${id}');
+        const response = await apiClient.get(`/git/configurations/${id}`);
         return response.data;
     },
 
@@ -67,7 +67,7 @@ const gitService = {
      * Update Git configuration
      */
     updateConfiguration: async (id, config) => {
-        const response = await apiClient.put('/git/configurations/${id}', config);
+        const response = await apiClient.put(`/git/configurations/${id}`, config);
         return response.data.data;
     },
 
@@ -75,7 +75,7 @@ const gitService = {
      * Delete Git configuration
      */
     deleteConfiguration: async (id) => {
-        const response = await apiClient.delete('/git/configurations/${id}');
+        const response = await apiClient.delete(`/git/configurations/${id}`);
         return response.data;
     },
 
@@ -83,7 +83,7 @@ const gitService = {
      * Validate Git configuration
      */
     validateConfiguration: async (id) => {
-        const response = await apiClient.post('/git/configurations/${id}/validate');
+        const response = await apiClient.post(`/git/configurations/${id}/validate`);
         return response.data.data;
     },
 
@@ -91,7 +91,7 @@ const gitService = {
      * Toggle active status
      */
     toggleActive: async (id, active) => {
-        const response = await apiClient.patch('/git/configurations/${id}/active, null, {
+        const response = await apiClient.patch(`/git/configurations/${id}/active`, null, {
             params: { active }
         });
         return response.data.data;

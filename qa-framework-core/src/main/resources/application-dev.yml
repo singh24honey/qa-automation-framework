@@ -8,6 +8,9 @@ spring:
       minimum-idle: 2
       connection-timeout: 20000
 
+  profile:
+    active:  dev,mock-git
+
   jpa:
     hibernate:
       ddl-auto: validate
