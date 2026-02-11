@@ -6,6 +6,7 @@ import com.company.qa.model.enums.AgentType;
 import com.company.qa.service.agent.AgentMemoryService;
 import com.company.qa.service.agent.AgentOrchestrator;
 import com.company.qa.service.agent.BaseAgent;
+import com.company.qa.service.agent.tool.AgentToolRegistry;
 import com.company.qa.service.ai.AIBudgetService;
 import com.company.qa.service.ai.AIGatewayService;
 import com.company.qa.service.approval.ApprovalRequestService;
@@ -14,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -48,10 +50,10 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
             ApprovalRequestService approvalService,
             AIBudgetService budgetService,
             AgentMemoryService memoryService,
-            AgentConfig config,
+            AgentToolRegistry toolRegistry,  // ✅ CORRECT - inject tool registry
             AgentOrchestrator orchestrator) {
 
-        super(aiGateway, auditService, approvalService, budgetService, memoryService, config);
+        super(aiGateway, auditService, approvalService, budgetService, memoryService, toolRegistry);
         this.orchestrator = orchestrator;
     }
 
@@ -130,7 +132,7 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
                     .success(success)
                     .output(result)
                     .errorMessage((String) result.get("error"))
-                    .aiCost((Double) result.get("aiCost"))
+                    .aiCost(extractAiCost(result))
                     .build();
 
         } catch (Exception e) {
@@ -143,6 +145,24 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
         }
     }
 
+    private Double extractAiCost(Map<String, Object> result) {
+        Object costObj = result.get("aiCost");
+
+        if (costObj == null) {
+            return 0.0;
+        }
+
+        if (costObj instanceof BigDecimal) {
+            return ((BigDecimal) costObj).doubleValue();  // ✅ Convert
+        }
+
+        if (costObj instanceof Number) {
+            return ((Number) costObj).doubleValue();  // Handle any Number
+        }
+
+        return 0.0;
+    }
+
     /**
      * Check if goal achieved.
      *
@@ -150,8 +170,15 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
      */
     @Override
     protected boolean isGoalAchieved(AgentContext context) {
-        return hasCompletedAction(context, AgentActionType.CREATE_PULL_REQUEST);
+        return hasCompletedAction(context, AgentActionType.FETCH_JIRA_STORY) &&
+                hasCompletedAction(context, AgentActionType.GENERATE_TEST_CODE) &&
+                hasCompletedAction(context, AgentActionType.WRITE_FILE) &&
+                hasCompletedAction(context, AgentActionType.REQUEST_APPROVAL) &&
+                hasCompletedAction(context, AgentActionType.CREATE_BRANCH) &&
+                hasCompletedAction(context, AgentActionType.COMMIT_CHANGES) &&
+                hasCompletedAction(context, AgentActionType.CREATE_PULL_REQUEST);
     }
+
 
     // ========== PLANNING METHODS ==========
 
@@ -208,12 +235,14 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
 
     private AgentPlan planCreateApproval(AgentContext context) {
         String testCode = context.getWorkProduct("testCode", String.class);
+        String testName = context.getWorkProduct("testClassName", String.class);
         String jiraKey = (String) context.getGoal().getParameters().get("jiraKey");
 
         Map<String, Object> params = new HashMap<>();
         params.put("testCode", testCode);
         params.put("jiraKey", jiraKey);
         params.put("requestedBy", "agent");
+        params.put("testName", testName);
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)
@@ -230,6 +259,7 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
 
         Map<String, Object> params = new HashMap<>();
         params.put("branchName", branchName);
+        params.put("storyKey", jiraKey);
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.CREATE_BRANCH)

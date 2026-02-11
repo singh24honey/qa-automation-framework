@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -89,7 +90,7 @@ public class AgentExecutionService {
      *
      * Called periodically during execution and at completion.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateExecution(UUID executionId, AgentContext context, AgentStatus status) {
         AgentExecution execution = executionRepository.findById(executionId)
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
@@ -119,7 +120,7 @@ public class AgentExecutionService {
     /**
      * Record final result when agent completes.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordResult(UUID executionId, AgentResult result) {
         AgentExecution execution = executionRepository.findById(executionId)
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
@@ -135,7 +136,7 @@ public class AgentExecutionService {
     /**
      * Record error when agent fails.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordError(UUID executionId, String errorMessage) {
         AgentExecution execution = executionRepository.findById(executionId)
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
@@ -154,7 +155,7 @@ public class AgentExecutionService {
      *
      * Called after each agent action.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void saveAction(UUID executionId, int iteration, AgentHistoryEntry historyEntry) {
         Map<String, Object> input = historyEntry.getActionInput();
         Map<String, Object> output = historyEntry.getActionOutput();

@@ -1,6 +1,7 @@
 package com.company.qa.service.agent.tool;
 
 import com.company.qa.model.enums.AgentActionType;
+import com.company.qa.service.agent.resilience.AgentCircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,12 @@ import java.util.stream.Collectors;
 public class AgentToolRegistry {
 
     private final Map<AgentActionType, AgentTool> tools = new ConcurrentHashMap<>();
+    private final AgentCircuitBreaker circuitBreaker; // ✅ INJECTED
+
+    public AgentToolRegistry(AgentCircuitBreaker circuitBreaker) {
+        this.circuitBreaker = circuitBreaker;
+    }
+
 
     /**
      * Register a tool.
@@ -63,27 +70,111 @@ public class AgentToolRegistry {
      * @return Tool execution result
      * @throws IllegalArgumentException if tool not found or parameters invalid
      */
-    public Map<String, Object> executeTool(AgentActionType actionType, Map<String, Object> parameters) {
-        AgentTool tool = tools.get(actionType);
+    public Map<String, Object> executeTool(
+            AgentActionType actionType,
+            Map<String, Object> parameters) {
 
+        AgentTool tool = tools.get(actionType);
         if (tool == null) {
-            throw new IllegalArgumentException("No tool registered for action: " + actionType);
+            return Map.of("success", false, "error", "No tool registered");
         }
 
-        if (!tool.validateParameters(parameters)) {
-            throw new IllegalArgumentException(
-                    "Invalid parameters for tool: " + actionType + ". Expected: " + tool.getParameterSchema()
+        String toolName = tool.getClass().getSimpleName();
+
+        // 1. ✅ CHECK CIRCUIT BREAKER BEFORE EXECUTION
+        if (!circuitBreaker.allowRequest(toolName)) {
+            log.warn("🔴 Circuit OPEN for {}, rejecting request", toolName);
+            return Map.of(
+                    "success", false,
+                    "error", "Circuit breaker OPEN for " + toolName,
+                    "circuitBreakerOpen", true
             );
         }
 
-        log.debug("🔧 Executing tool: {} with params: {}", tool.getName(), parameters.keySet());
-
-        try {
-            return tool.execute(parameters);
-        } catch (Exception e) {
-            log.error("Tool execution failed: {}", actionType, e);
-            throw new RuntimeException("Tool execution failed: " + e.getMessage(), e);
+        // 2. Validate parameters
+        if (!tool.validateParameters(parameters)) {
+            return Map.of("success", false, "error", "Invalid parameters");
         }
+
+        // 3. Execute tool
+        try {
+            Map<String, Object> result = tool.execute(parameters);
+
+            // 4. ✅ RECORD SUCCESS/FAILURE TO CIRCUIT BREAKER
+            if (result.get("success") == Boolean.TRUE) {
+                circuitBreaker.recordSuccess(toolName);
+            } else {
+                circuitBreaker.recordFailure(toolName);
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            // 5. ✅ RECORD EXCEPTION TO CIRCUIT BREAKER
+            circuitBreaker.recordFailure(toolName);
+            log.error("Tool {} threw exception", toolName, e);
+
+            return Map.of(
+                    "success", false,
+                    "error", e.getMessage()
+            );
+        }
+    }
+
+    /**
+     * Execute with retry logic.
+     */
+    public Map<String, Object> executeToolWithRetry(
+            AgentActionType actionType,
+            Map<String, Object> parameters,
+            int maxRetries) {
+
+        int attempt = 0;
+        Map<String, Object> lastResult = null;
+
+        while (attempt < maxRetries) {
+            attempt++;
+            lastResult = executeTool(actionType, parameters);
+
+            // Success - return
+            if (lastResult.get("success") == Boolean.TRUE) {
+                if (attempt > 1) {
+                    log.info("✅ {} succeeded after {} attempts", actionType, attempt);
+                }
+                return lastResult;
+            }
+
+            // Circuit breaker open - stop retrying
+            if (lastResult.containsKey("circuitBreakerOpen")) {
+                log.warn("Circuit open, stopping retries for {}", actionType);
+                return lastResult;
+            }
+
+            // Retry with exponential backoff
+            if (attempt < maxRetries) {
+                long backoffMs = (long) (Math.pow(2, attempt) * 1000);
+                log.warn("⚠️ {} failed (attempt {}/{}), retry in {}ms",
+                        actionType, attempt, maxRetries, backoffMs);
+                try {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        return lastResult;
+    }
+
+    public List<AgentTool> getAllTools() {
+        return List.copyOf(tools.values());
+    }
+
+    public AgentCircuitBreaker.State getCircuitState(AgentActionType actionType) {
+        AgentTool tool = tools.get(actionType);
+        if (tool == null) return null;
+        return circuitBreaker.getState(tool.getClass().getSimpleName());
     }
 
     /**
@@ -91,9 +182,9 @@ public class AgentToolRegistry {
      *
      * @return Unmodifiable list of all tools
      */
-    public List<AgentTool> getAllTools() {
+  /*  public List<AgentTool> getAllTools() {
         return new ArrayList<>(tools.values());
-    }
+    }*/
 
     /**
      * Check if tool is registered.

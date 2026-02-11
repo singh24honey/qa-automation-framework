@@ -33,6 +33,11 @@ public interface GitConfigurationRepository extends JpaRepository<GitConfigurati
     List<GitConfiguration> findByIsActiveTrueAndIsValidatedTrue();
 
     /**
+     * Find all validated and active configurations
+     */
+    List<GitConfiguration> findByIsActiveFalse();
+
+    /**
      * Find by repository type
      */
     List<GitConfiguration> findByRepositoryTypeAndIsActiveTrue(RepositoryType repositoryType);

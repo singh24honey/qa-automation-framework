@@ -377,7 +377,7 @@ public class GitServiceImpl implements GitService {
 
     @Override
     public GitConfiguration getDefaultConfiguration() {
-        return gitConfigurationRepository.findByIsActiveTrueAndIsValidatedTrue()
+        return gitConfigurationRepository.findByIsActiveFalse()
                 .stream()
                 .findFirst()
                 .orElseThrow(() -> new GitOperationException("No active Git configuration found"));

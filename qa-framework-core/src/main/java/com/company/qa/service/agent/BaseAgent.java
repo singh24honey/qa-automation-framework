@@ -11,6 +11,7 @@ import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -53,7 +54,7 @@ public abstract class BaseAgent {
 
     // ========== CONFIGURATION ==========
 
-    protected final AgentConfig config;
+
     protected abstract AgentType getAgentType();
 
     @Autowired
@@ -71,15 +72,17 @@ public abstract class BaseAgent {
             ApprovalRequestService approvalService,
             AIBudgetService budgetService,
             AgentMemoryService memoryService,
-            AgentConfig config
-    ) {
+            AgentToolRegistry toolRegistry)   // ✅ CORRECT
+     {
         this.aiGateway = aiGateway;
         this.auditService = auditService;
         this.approvalService = approvalService;
         this.budgetService = budgetService;
         this.memoryService = memoryService;
-        this.config = config;
+         this.toolRegistry = toolRegistry;  // ✅ Tool registry is a singleton bean
     }
+
+
 
     /**
      * Main execution method - THE AGENT LOOP.
@@ -92,7 +95,7 @@ public abstract class BaseAgent {
      * - Agent checks if goal achieved
      * - Repeat until done or timeout
      */
-    public AgentResult executeOld(AgentGoal goal) {
+   /* public AgentResult executeOld(AgentGoal goal) {
         log.info("🤖 Agent starting execution for goal: {}", goal.getGoalType());
 
         Instant startTime = Instant.now();
@@ -169,7 +172,7 @@ public abstract class BaseAgent {
             // Cleanup
             memoryService.clearContext(executionId);
         }
-    }
+    }*/
 
 
     // ========== CORRECTED EXECUTE METHOD ==========
@@ -230,8 +233,13 @@ public abstract class BaseAgent {
 
                 context.addToHistory(historyEntry);
 
+                log.info("🔍 DEBUG: About to save action: {}", historyEntry.getActionType());
+
                 // Save action to database
                 saveAction(executionId, context, historyEntry);
+
+                log.info("🔍 DEBUG: saveAction() completed");
+
 
                 // Update context
                 if (actionResult.isSuccess()) {
@@ -400,7 +408,7 @@ public abstract class BaseAgent {
         return AgentContext.builder()
                 .goal(goal)
                 .currentIteration(0)
-                .maxIterations(config.getMaxIterations())
+                //.maxIterations(config.getMaxIterations())
                 .actionHistory(new ArrayList<>())
                 .workProducts(new HashMap<>())
                 .state(new HashMap<>())
@@ -593,12 +601,16 @@ public abstract class BaseAgent {
      *
      * Called after each action execution.
      */
-    protected void saveAction(UUID executionId, AgentContext context, AgentHistoryEntry action) {
+
+    protected void saveAction(UUID executionId, AgentContext context, AgentHistoryEntry historyEntry) {
         try {
-            executionService.saveAction(executionId, context.getCurrentIteration(), action);
+            executionService.saveAction(executionId, context.getCurrentIteration(), historyEntry);
+            log.debug("✅ Saved action: {} - iteration: {}",
+                    historyEntry.getActionType(), context.getCurrentIteration());
         } catch (Exception e) {
-            log.error("Failed to save action: {}", executionId, e);
-            // Don't fail execution on save error
+            log.error("❌ Failed to save action: {} - {}",
+                    historyEntry.getActionType(), e.getMessage());
+            // Don't throw - agent can continue even if history save fails
         }
     }
 
@@ -625,6 +637,23 @@ public abstract class BaseAgent {
             throw new IllegalStateException("No tool registered for action: " + actionType);
         }
 
-        return toolRegistry.executeTool(actionType, parameters);
+        // Retry for critical actions
+        boolean shouldRetry = shouldRetryAction(actionType);
+        int maxRetries = shouldRetry ? 3 : 1;
+
+        if (shouldRetry) {
+            return toolRegistry.executeToolWithRetry(actionType, parameters, maxRetries);
+        } else {
+            return toolRegistry.executeTool(actionType, parameters);
+        }
+    }
+
+
+    private boolean shouldRetryAction(AgentActionType actionType) {
+        return actionType == AgentActionType.GENERATE_TEST_CODE ||
+                actionType == AgentActionType.FETCH_JIRA_STORY ||
+                actionType == AgentActionType.CREATE_BRANCH ||
+                actionType == AgentActionType.COMMIT_CHANGES ||
+                actionType == AgentActionType.CREATE_PULL_REQUEST;
     }
 }

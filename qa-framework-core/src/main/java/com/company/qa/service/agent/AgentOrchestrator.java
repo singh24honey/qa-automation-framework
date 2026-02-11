@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 
 /**
  * Orchestrates agent execution lifecycle.
@@ -95,7 +96,7 @@ public class AgentOrchestrator {
                 executionService.recordError(executionId, e.getMessage());
                 throw new RuntimeException("Agent execution failed", e);
             }
-        });
+        }, Executors.newSingleThreadExecutor());
 
 
 

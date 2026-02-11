@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,9 +36,33 @@ public interface AgentExecutionRepository extends JpaRepository<AgentExecution, 
 
     long countByStatus(AgentStatus status);
 
-    @Query("SELECT ae FROM AgentExecution ae WHERE ae.status IN ('RUNNING', 'WAITING_FOR_APPROVAL')")
-    List<AgentExecution> findRunningAgents();
 
     @Query("SELECT ae FROM AgentExecution ae WHERE ae.status = 'RUNNING' AND ae.startedAt < :threshold")
     List<AgentExecution> findStuckAgents(@Param("threshold") Instant threshold);
+
+    @Query("SELECT ae FROM AgentExecution ae ORDER BY ae.createdAt DESC")
+    List<AgentExecution> findLatestExecutions();
+
+
+    List<AgentExecution> findByStatusIn(List<AgentStatus> statuses);
+
+    /**
+     * Find running or waiting executions.
+     * ✅ Convenience method.
+     */
+    default List<AgentExecution> findRunningAgents() {
+        return findByStatusIn(Arrays.asList(
+                AgentStatus.RUNNING,
+                AgentStatus.WAITING_FOR_APPROVAL
+        ));
+    }
+
+
+    /**
+     * Check if execution exists with specific status.
+     */
+    boolean existsByIdAndStatus(UUID id, AgentStatus status);
+
+    List<AgentExecution> findByAgentTypeOrderByCreatedAtDesc(AgentType agentType);
+
 }

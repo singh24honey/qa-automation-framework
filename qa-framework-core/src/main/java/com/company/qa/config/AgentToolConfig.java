@@ -1,39 +1,50 @@
 package com.company.qa.config;
 
 import com.company.qa.service.agent.tool.AgentToolRegistry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.context.annotation.Bean;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.EventListener;
 
 /**
- * Configuration for agent tools.
+ * Agent tool validation configuration.
  *
- * Tools self-register via @PostConstruct, but this config
- * provides startup validation.
+ * Validates that tools registered successfully after application startup.
  */
 @Configuration
 @Slf4j
+@RequiredArgsConstructor
 public class AgentToolConfig {
 
+    private final AgentToolRegistry toolRegistry;
+
     /**
-     * Validate tool registry at startup.
+     * Validate tools after application is ready.
+     *
+     * Runs AFTER @PostConstruct, so tools are already registered.
      */
-    @Bean
-    public CommandLineRunner validateTools(AgentToolRegistry registry) {
-        return args -> {
-            int toolCount = registry.getToolCount();
-            log.info("🔧 Registered {} agent tools", toolCount);
+    @EventListener(ApplicationReadyEvent.class)
+    public void validateAgentTools() {
+        int toolCount = toolRegistry.getToolCount();
 
-            if (toolCount == 0) {
-                log.warn("⚠️  No agent tools registered! Agents will not be able to execute actions.");
-            }
+        log.info("═══════════════════════════════════════════");
+        log.info("🔧 Agent Tool Registration Summary");
+        log.info("═══════════════════════════════════════════");
+        log.info("Total tools registered: {}", toolCount);
 
-            // Log available tools
-            log.info("Available tools:");
-            registry.getAllTools().forEach(tool ->
-                    log.info("  - {} ({})", tool.getName(), tool.getActionType())
+        if (toolCount == 0) {
+            log.error("❌ ERROR: No agent tools registered!");
+            log.error("Agents will not be able to execute actions.");
+        } else {
+            log.info("✅ Tools successfully registered:");
+            toolRegistry.getAllTools().forEach(tool ->
+                    log.info("   • {} → {}",
+                            String.format("%-25s", tool.getActionType()),
+                            tool.getName())
             );
-        };
+        }
+
+        log.info("═══════════════════════════════════════════");
     }
 }

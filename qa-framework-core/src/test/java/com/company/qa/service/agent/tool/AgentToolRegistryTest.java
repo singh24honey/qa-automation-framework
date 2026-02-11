@@ -1,6 +1,7 @@
 package com.company.qa.service.agent.tool;
 
 import com.company.qa.model.enums.AgentActionType;
+import com.company.qa.service.agent.resilience.AgentCircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,9 +15,11 @@ class AgentToolRegistryTest {
 
     private AgentToolRegistry registry;
 
+    private AgentCircuitBreaker circuitBreaker;
+
     @BeforeEach
     void setUp() {
-        registry = new AgentToolRegistry();
+        registry = new AgentToolRegistry(circuitBreaker);
     }
 
     @Test

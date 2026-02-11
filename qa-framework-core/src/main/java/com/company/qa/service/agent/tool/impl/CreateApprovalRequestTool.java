@@ -58,6 +58,7 @@ public class CreateApprovalRequestTool implements AgentTool {
         String testCode = (String) parameters.get("testCode");
         String jiraKey = (String) parameters.get("jiraKey");
         String testName = (String) parameters.get("testName");
+        //String requestedBy = (String) parameters.getOrDefault("requestedBy", "agent-system");
         String testFramework = (String) parameters.getOrDefault("testFramework", "PLAYWRIGHT");
         String requestedByName = (String) parameters.getOrDefault("requestedBy", "agent-system");
 
@@ -79,6 +80,7 @@ public class CreateApprovalRequestTool implements AgentTool {
                     .expirationDays(7)  // Default 7 days
                     .sanitizationApplied(true)  // Assume sanitization was done
                     .redactionCount(0)
+                    .requestedById(UUID.randomUUID())
                     .build();
 
             log.debug("Creating approval request for test: {} (story: {})", testName, jiraKey);

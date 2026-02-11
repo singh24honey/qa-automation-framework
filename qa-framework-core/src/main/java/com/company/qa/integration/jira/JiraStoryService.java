@@ -84,6 +84,14 @@ public class JiraStoryService {
         } catch (Exception e) {
             log.warn("Skipping Jira health check due to transient error: {}", e.getMessage());
         }
+
+        if (jiraKey == null || jiraKey.trim().isEmpty()) {
+            throw new IllegalArgumentException("JIRA key cannot be empty");
+        }
+
+        // Double-check (race condition)
+
+
 // Check if story already exists (update if so)
         Optional<JiraStory> existing = storyRepository.findByJiraKey(jiraKey);
 
