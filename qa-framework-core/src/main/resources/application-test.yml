@@ -132,11 +132,22 @@ ai:
       retry:
         max-attempts: 2  # Reduced for faster tests
 
+# Git Configuration (Mock for Week 15)
 git:
-  enabled: false
-  secrets:
+  service:
+    type: MOCK # Use MockGitService (options: MOCK, GITHUB, GITLAB)
+
+  # Mock Git settings (used when type=MOCK)
+  mock:
+    enabled: true
+    repository-url: https://github.com/mock/uat-test-runner
+    default-branch: main
+
+  # Real Git settings (for future use in Week 16+)
+  real:
     enabled: false
-  working-directory: /tmp/qa-framework-test/git-workspace
+    # Will be configured in Week 16
+
 
 # ============================================================
 # PLAYWRIGHT - TEST OVERRIDES
@@ -148,3 +159,67 @@ playwright:
   record-video: false  # Don't record videos (saves space)
   record-trace: false  # Don't record traces (faster)
   timeout: 10000       # Shorter timeout for tests (10 sec)
+
+uat:
+  submodule:
+    # Path to Playwright tests submodule (relative to main QA framework project)
+    path: ../playwright-tests
+
+    # Folder structure (relative to submodule root)
+    drafts-folder: drafts
+    approved-folder: approved
+    rejected-folder: rejected
+
+    # Final test location after Git commit
+    final-test-path: src/test/java/com/company/qa/playwright/tests
+
+    # Test execution settings
+    auto-execute-approved: false
+
+
+agent:
+  memory:
+    ttl-hours: 24
+    key-prefix: "agent:context:"
+
+  execution:
+    default-max-iterations: 20
+    default-max-cost: 5.0
+    approval-timeout-seconds: 3600
+
+  timeout:
+    default-seconds: 300 # 5 minutes
+    playwright-agent-seconds: 600 # 10 minutes for test generation
+
+    retry:
+      max-attempts: 3
+      backoff-ms: 1000
+
+    tools:
+      # Enable all tools for Week 15
+      enabled:
+        - FETCH_JIRA_STORY
+        - GENERATE_TEST_CODE
+        - WRITE_FILE
+        - CREATE_GIT_BRANCH
+        - COMMIT_CHANGES
+        - CREATE_PULL_REQUEST
+        - CREATE_APPROVAL_REQUEST
+
+saucedemo:
+  base-url: https://www.saucedemo.com
+  credentials:
+    username: standard_user
+    password: secret_sauce
+
+  # Element Registry Configuration
+
+  element-registry:
+    # Path to Sauce Demo element registry
+    saucedemo-path: classpath:playwright/element-registry-saucedemo.json
+
+    # Enable registry loading on startup
+    load-on-startup: true
+
+    # Cache registry in memory
+    cache-enabled: true

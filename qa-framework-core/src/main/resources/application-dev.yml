@@ -87,6 +87,10 @@ logging:
     com.framework.qa.service: DEBUG
     com.framework.qa.integration.jira: DEBUG
     com.company.qa.service.ai: DEBUG
+    com.company.qa.service.git.MockGitService: INFO
+    com.company.qa.service.draft.DraftFileService: INFO
+    com.company.qa.service.agent: DEBUG
+    com.company.qa.service.playwright: DEBUG
 
 execution:
   timeout-minutes: 10
@@ -249,11 +253,21 @@ jira:
     enabled: true
     requests-per-minute: 60
 
+# Git Configuration (Mock for Week 15)
 git:
-  enabled: true
-  secrets:
+  service:
+    type: MOCK # Use MockGitService (options: MOCK, GITHUB, GITLAB)
+
+  # Mock Git settings (used when type=MOCK)
+  mock:
+    enabled: true
+    repository-url: https://github.com/mock/uat-test-runner
+    default-branch: main
+
+  # Real Git settings (for future use in Week 16+)
+  real:
     enabled: false
-  working-directory: /tmp/qa-framework-test/git-workspace
+    # Will be configured in Week 16
 
 # ============================================================
 # PLAYWRIGHT - DEVELOPMENT OVERRIDES
@@ -266,6 +280,24 @@ playwright:
   record-trace: true   # Capture traces
   timeout: 60000       # Longer timeout for debugging (60 sec)
 
+# Sauce Demo Configuration
+saucedemo:
+  base-url: https://www.saucedemo.com
+  credentials:
+    username: standard_user
+    password: secret_sauce
+
+# Element Registry Configuration
+
+  element-registry:
+    # Path to Sauce Demo element registry
+    saucedemo-path: classpath:playwright/element-registry-saucedemo.json
+
+    # Enable registry loading on startup
+    load-on-startup: true
+
+    # Cache registry in memory
+    cache-enabled: true
 
 # Agent Configuration
 agent:
@@ -277,3 +309,41 @@ agent:
     default-max-iterations: 20
     default-max-cost: 5.0
     approval-timeout-seconds: 3600
+
+  timeout:
+    default-seconds: 300 # 5 minutes
+    playwright-agent-seconds: 600 # 10 minutes for test generation
+
+    retry:
+      max-attempts: 3
+      backoff-ms: 1000
+
+    tools:
+      # Enable all tools for Week 15
+      enabled:
+        - FETCH_JIRA_STORY
+        - GENERATE_TEST_CODE
+        - WRITE_FILE
+        - CREATE_GIT_BRANCH
+        - COMMIT_CHANGES
+        - CREATE_PULL_REQUEST
+        - CREATE_APPROVAL_REQUEST
+
+
+uat:
+  submodule:
+    # Path to Playwright tests submodule (relative to main QA framework project)
+    path: ../playwright-tests
+
+    # Folder structure (relative to submodule root)
+    drafts-folder: drafts
+    approved-folder: approved
+    rejected-folder: rejected
+
+    # Final test location after Git commit
+    final-test-path: src/test/java/com/company/qa/playwright/tests
+
+    # Test execution settings
+    auto-execute-approved: false
+
+

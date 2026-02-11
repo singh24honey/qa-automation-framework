@@ -1,0 +1,76 @@
+{
+  "stories": [
+    {
+      "jiraKey": "SAUCE-001",
+      "summary": "User Login to Sauce Demo",
+      "description": "As a user, I want to log in to Sauce Demo so that I can access the product catalog and shopping features.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "High",
+      "acceptanceCriteria": "Given I am on the Sauce Demo login page\nWhen I enter valid credentials (standard_user / secret_sauce)\nAnd I click the Login button\nThen I should see the Products page\nAnd the page title should be 'Products'",
+      "labels": ["ui-test", "authentication", "sauce-demo"],
+      "components": ["Authentication"],
+      "targetUrl": "https://www.saucedemo.com"
+    },
+    {
+      "jiraKey": "SAUCE-002",
+      "summary": "Add Products to Shopping Cart",
+      "description": "As a customer, I want to add products to my shopping cart so that I can purchase multiple items together.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "High",
+      "acceptanceCriteria": "Given I am logged in to Sauce Demo\nWhen I click 'Add to cart' for Sauce Labs Backpack\nAnd I click 'Add to cart' for Sauce Labs Bike Light\nThen the shopping cart badge should show '2'\nAnd both products should appear in the cart",
+      "labels": ["ui-test", "shopping-cart", "sauce-demo"],
+      "components": ["Shopping Cart"],
+      "targetUrl": "https://www.saucedemo.com/inventory.html"
+    },
+    {
+      "jiraKey": "SAUCE-003",
+      "summary": "Complete Checkout Process",
+      "description": "As a customer, I want to complete the checkout process so that I can purchase my selected items.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "High",
+      "acceptanceCriteria": "Given I have items in my shopping cart\nWhen I proceed to checkout\nAnd I enter shipping information (First: John, Last: Doe, Zip: 12345)\nAnd I continue to the overview page\nAnd I click the Finish button\nThen I should see the order confirmation\nAnd the confirmation message should say 'Thank you for your order!'",
+      "labels": ["ui-test", "checkout", "sauce-demo", "e2e"],
+      "components": ["Checkout", "Payment"],
+      "targetUrl": "https://www.saucedemo.com/cart.html"
+    },
+    {
+      "jiraKey": "SAUCE-004",
+      "summary": "Invalid Login Attempt",
+      "description": "As a system, I want to prevent unauthorized access by rejecting invalid credentials.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "Medium",
+      "acceptanceCriteria": "Given I am on the Sauce Demo login page\nWhen I enter invalid credentials (invalid_user / wrong_password)\nAnd I click the Login button\nThen I should see an error message\nAnd the error message should contain 'Username and password do not match'",
+      "labels": ["ui-test", "authentication", "negative-test", "sauce-demo"],
+      "components": ["Authentication"],
+      "targetUrl": "https://www.saucedemo.com"
+    },
+    {
+      "jiraKey": "SAUCE-005",
+      "summary": "Remove Product from Cart",
+      "description": "As a customer, I want to remove products from my cart so that I can adjust my order before checkout.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "Medium",
+      "acceptanceCriteria": "Given I have added Sauce Labs Backpack to my cart\nWhen I navigate to the shopping cart\nAnd I click the Remove button for the Backpack\nThen the product should be removed from the cart\nAnd the cart badge should update to show '0'",
+      "labels": ["ui-test", "shopping-cart", "sauce-demo"],
+      "components": ["Shopping Cart"],
+      "targetUrl": "https://www.saucedemo.com/cart.html"
+    },
+    {
+      "jiraKey": "SAUCE-006",
+      "summary": "Complete Shopping Flow End-to-End",
+      "description": "As a customer, I want to complete the entire shopping flow from login to order confirmation.",
+      "storyType": "Story",
+      "status": "To Do",
+      "priority": "High",
+      "acceptanceCriteria": "Scenario: Complete shopping flow\nGiven I am on the login page\nWhen I login with valid credentials\nAnd I add 2 products to cart\nAnd I proceed to checkout\nAnd I complete the shipping information\nAnd I confirm the order\nThen I should see the order confirmation page\nAnd the confirmation header should say 'Thank you for your order!'",
+      "labels": ["ui-test", "e2e", "smoke-test", "sauce-demo"],
+      "components": ["Authentication", "Shopping Cart", "Checkout"],
+      "targetUrl": "https://www.saucedemo.com"
+    }
+  ]
+}
