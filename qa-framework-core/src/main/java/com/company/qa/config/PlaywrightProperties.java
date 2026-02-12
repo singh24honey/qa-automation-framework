@@ -30,7 +30,7 @@ public class PlaywrightProperties {
     /**
      * Browser type: chromium, firefox, or webkit
      */
-    private String browser = "chromium";
+    private String browser = "firefox";
 
     /**
      * Run in headless mode (no GUI)

@@ -4,6 +4,7 @@ import com.company.qa.model.agent.*;
 
 import com.company.qa.model.agent.entity.AgentActionHistory;
 import com.company.qa.model.agent.entity.AgentExecution;
+import com.company.qa.model.dto.ApiResponse;
 import com.company.qa.model.enums.AgentType;
 import com.company.qa.service.agent.AgentExecutionService;
 import com.company.qa.service.agent.AgentOrchestrator;
@@ -14,7 +15,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -224,4 +227,6 @@ public class AgentController {
                 .timestamp(action.getTimestamp())
                 .build();
     }
+
+
 }

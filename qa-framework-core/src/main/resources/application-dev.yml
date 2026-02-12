@@ -332,6 +332,18 @@ agent:
         - CREATE_PULL_REQUEST
         - CREATE_APPROVAL_REQUEST
 
+  flaky-test:
+    flakiness-threshold: 0.2          # 20% failure rate = flaky
+    stability-check-runs: 5            # Run test 5 times to confirm
+    verification-runs: 5               # Run 5 times after fix
+    max-fix-attempts: 3                # Try up to 3 different fixes
+    min-historical-runs: 10            # Need at least 10 runs for reliable score
+    auto-detection-enabled: true       # Enable automatic detection
+    test-execution-timeout: 300        # 5 minutes per test run
+
+  self-healing:
+    max-locator-alternatives: 5        # Day 3-4
+    ai-fallback-enabled: true          # Day 3-4
 
 uat:
   submodule:
