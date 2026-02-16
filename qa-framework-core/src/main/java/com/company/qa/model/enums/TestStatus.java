@@ -5,8 +5,10 @@ public enum TestStatus {
     RUNNING,
     PASSED,
     FAILED,
+    FLAKY,
     SKIPPED,
     ERROR,
     CANCELLED,
+    APPROVED,
     TIMEOUT
 }

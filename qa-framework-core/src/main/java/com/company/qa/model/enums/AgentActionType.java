@@ -21,6 +21,8 @@ public enum AgentActionType {
     SUGGEST_FIX,
     PLAN_NEXT_STEP,
 
+    DISCOVER_LOCATOR,
+
     // ========== Test Execution Actions ==========
     EXECUTE_TEST,
     VALIDATE_TEST,
@@ -55,5 +57,6 @@ public enum AgentActionType {
     INITIALIZE,
     FINALIZE,
     ABORT,
-    COMPLETE, RETRY_ACTION
+    COMPLETE, RETRY_ACTION,
+    EXTRACT_BROKEN_LOCATOR
 }

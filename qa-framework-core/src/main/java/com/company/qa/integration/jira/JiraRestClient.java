@@ -213,6 +213,7 @@ public class JiraRestClient {
             // Get credentials from AWS Secrets Manager
             JiraCredentials credentials = secretsManager.getCredentials(config.getSecretArn());
 
+
             // Build URL
             String fullUrl = buildUrl(config.getJiraUrl(), endpoint, queryParams);
 
@@ -227,6 +228,8 @@ public class JiraRestClient {
                     httpGet.setHeader("X-Request-ID", requestId);
 
                     log.debug("JIRA API {} {}", method, fullUrl);
+
+                    //log.info("Auth header = {}", authorizationHeader);
 
                     String body = httpClient.execute(httpGet, response -> {
                         int statusCode = response.getCode();

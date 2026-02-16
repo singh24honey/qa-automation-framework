@@ -316,7 +316,54 @@ Use locators in this priority order:
 """;
     }
 
-    /**
+    /**private String getPlaywrightGuidance() {
+     return """
+     === Playwright Locator Strategy (CRITICAL) ===
+
+     Use locators in this priority order:
+
+     1. Role-based (BEST for accessibility):
+     page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Sign In"))
+     page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Email"))
+
+     2. Label-based (for form fields):
+     page.getByLabel("Email")
+     page.getByLabel("Password")
+
+     3. Placeholder-based:
+     page.getByPlaceholder("Enter your email")
+
+     4. Test ID (when available in Element Registry):
+     page.getByTestId("login-error")
+
+     5. Text content:
+     page.getByText("Welcome back")
+
+     6. CSS/XPath (LAST RESORT - avoid if possible):
+     page.locator("#email-input")
+
+     === IMPORTANT INSTRUCTIONS ===
+
+     1. **CHECK ELEMENT REGISTRY FIRST**: If an element is listed in the Element Registry above,
+     USE THE EXACT locator code provided. Do NOT create your own locator for that element.
+
+     2. **CHECK PAGE OBJECT REGISTRY**: If a Page Object exists for the page you're testing,
+     USE the existing methods instead of writing raw Playwright code in the test.
+     Example: Use loginPage.login(email, password) instead of page.getByLabel("Email").fill(...)
+
+     3. **Only create NEW Page Objects if**:
+     - No existing Page Object handles this page
+     - The test requires new methods not in existing Page Objects
+
+     4. **Test Structure**:
+     - Extend BasePlaywrightTest
+     - Use JUnit 5 (@Test annotation)
+     - Include meaningful assertions
+     - Add comments for complex logic
+
+     5. **Naming Conventions**:
+     - Test class: {StoryKey}_{Feature}Test (e.g., PROJ123_LoginTest)
+     - Test methods:
      * JSON output format instructions.
      */
     private String getOutputFormatInstructions() {

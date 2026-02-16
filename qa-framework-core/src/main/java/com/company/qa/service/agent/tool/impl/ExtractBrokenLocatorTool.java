@@ -62,7 +62,7 @@ public class ExtractBrokenLocatorTool implements AgentTool {
 
     @Override
     public AgentActionType getActionType() {
-        return AgentActionType.ANALYZE_FAILURE;
+        return AgentActionType.EXTRACT_BROKEN_LOCATOR;
     }
 
     @Override
@@ -277,11 +277,12 @@ public class ExtractBrokenLocatorTool implements AgentTool {
         }
 
         // Common patterns
-        if (url.contains("/login")) return "login";
-        if (url.contains("/dashboard")) return "dashboard";
-        if (url.contains("/inventory")) return "inventory";
-        if (url.contains("/cart")) return "cart";
-        if (url.contains("/checkout")) return "checkout";
+        if (url.contains("/login")) return "LoginPage";
+        if (url.contains("/dashboard")) return "DashboardPage";
+        if (url.contains("/inventory")) return "InventoryPage";
+        if (url.contains("/cart")) return "CartPage";
+        if (url.contains("/checkout")) return "CheckoutPage";
+        if(url.equals("https://www.saucedemo.com")) return "LoginPage";
 
         // Try to extract last path segment
         try {

@@ -14,7 +14,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -87,8 +87,8 @@ logging:
     com.company.qa: DEBUG
     com.company.qa.security: DEBUG  # ADD THIS
     org.springframework.security: DEBUG  # ADD THIS (for troubleshooting)
-    com.framework.qa.service: DEBUG
-    com.framework.qa.integration.jira: DEBUG
+    com.framework.qa.service: INFO
+    com.framework.qa.integration.jira: INFO
     com.company.qa.service.ai: DEBUG
     com.company.qa.service.git.MockGitService: INFO
     com.company.qa.service.draft.DraftFileService: INFO

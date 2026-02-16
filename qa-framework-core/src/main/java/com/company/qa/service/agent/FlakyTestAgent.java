@@ -11,6 +11,7 @@ import com.company.qa.service.ai.AIBudgetService;
 import com.company.qa.service.ai.AIGatewayService;
 import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -102,6 +103,27 @@ public class FlakyTestAgent extends BaseAgent {
             initializeAgentState(context);
         }
 
+        AgentActionType lastAction = getLastActionType(context);
+        if (lastAction != AgentActionType.REQUEST_APPROVAL) {
+            int consecutiveFailures = countConsecutiveFailures(context, lastAction);
+
+            if (consecutiveFailures >= 3) {
+                log.error("❌ Action {} failed {} times consecutively - aborting",
+                        lastAction, consecutiveFailures);
+
+                return AgentPlan.builder()
+                        .nextAction(AgentActionType.REQUEST_APPROVAL)
+                        .actionParameters(Map.of(
+                                "testName", " [FAILED - NEEDS MANUAL FIX]",
+                                "requestedBy", "FlakyTestAgent",
+                                "reason", "Action " + lastAction + " failed " + consecutiveFailures + " times"
+                        ))
+                        .reasoning("Multiple consecutive failures - flagging for manual review")
+                        .confidence(1.0)
+                        .requiresApproval(false)
+                        .build();
+            }
+        }
         // Check if we've processed all tests
         if (currentTestIndex >= testsToAnalyze.size()) {
             return planComplete(context);
@@ -138,7 +160,7 @@ public class FlakyTestAgent extends BaseAgent {
         }
 
         if (!hasRecordedPattern) {
-            return planRecordPattern(context);
+            return planRecordPattern(context,test);
         }
 
         // ========== DAY 2: FIX GENERATION & VERIFICATION ==========
@@ -167,7 +189,7 @@ public class FlakyTestAgent extends BaseAgent {
                 // Fix didn't work, try next attempt
                 log.warn("❌ Fix attempt {} failed, trying next fix", fixAttemptCount);
                 fixAttemptCount++;
-                //context.putState("currentTestStartIteration", context.getCurrentIteration());
+                context.putState("currentTestStartIteration", context.getCurrentIteration());
                 return plan(context); // Recursive call to try next fix
             }
         } else {
@@ -203,6 +225,47 @@ public class FlakyTestAgent extends BaseAgent {
         return plan(context);
     }
 
+
+    /**
+     * ✅ NEW HELPER: Count consecutive failures of same action
+     */
+    private int countConsecutiveFailures(AgentContext context, AgentActionType actionType) {
+        if (context.getActionHistory() == null || actionType == null) {
+            return 0;
+        }
+
+        int count = 0;
+        List<AgentHistoryEntry> history = context.getActionHistory();
+
+        // Count backwards from most recent
+        for (int i = history.size() - 1; i >= 0; i--) {
+            AgentHistoryEntry entry = history.get(i);
+
+            if (entry.getActionType() != actionType) {
+                break;  // Different action type - stop counting
+            }
+
+            if (!entry.isSuccess()) {
+                count++;
+            } else {
+                break;  // Success - stop counting
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * ✅ NEW HELPER: Get last action type (same as SelfHealingAgent)
+     */
+    private AgentActionType getLastActionType(AgentContext context) {
+        if (context.getActionHistory() == null || context.getActionHistory().isEmpty()) {
+            return null;
+        }
+
+        List<AgentHistoryEntry> history = context.getActionHistory();
+        return history.get(history.size() - 1).getActionType();
+    }
     @Override
     protected ActionResult executeAction(
             AgentActionType actionType,
@@ -212,6 +275,15 @@ public class FlakyTestAgent extends BaseAgent {
         try {
             log.info("🔧 Executing action: {}", actionType);
 
+            // ✅ NEW: Handle meta-actions that don't need tools
+            if (isMetaAction(actionType)) {
+                log.info("✅ Meta-action {} completed", actionType);
+                return ActionResult.builder()
+                        .actionType(actionType)
+                        .success(true)
+                        .output(parameters)
+                        .build();
+            }
             // Execute using tool registry
             Map<String, Object> result = executeTool(actionType, parameters);
 
@@ -244,6 +316,14 @@ public class FlakyTestAgent extends BaseAgent {
                     .errorMessage(e.getMessage())
                     .build();
         }
+    }
+
+
+    private boolean isMetaAction(AgentActionType actionType) {
+        return actionType == AgentActionType.COMPLETE ||
+                actionType == AgentActionType.INITIALIZE ||
+                actionType == AgentActionType.FINALIZE ||
+                actionType == AgentActionType.ABORT;
     }
 
     @Override
@@ -327,11 +407,14 @@ public class FlakyTestAgent extends BaseAgent {
                 .build();
     }
 
-    private AgentPlan planRecordPattern(AgentContext context) {
+    private AgentPlan planRecordPattern(AgentContext context,Test test) {
         String stabilityResult = (String) currentTestAnalysis.get("stabilityResult");
+        String testClassName = (String) currentTestAnalysis.get("testCaseName");
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("stabilityResult", stabilityResult);
+        parameters.put("testCode", test.getContent());
+        parameters.put("testClassName", testClassName);
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.WRITE_FILE)
@@ -495,7 +578,7 @@ public class FlakyTestAgent extends BaseAgent {
 
     // ========== STATE MANAGEMENT ==========
 
-    private void updateStateFromActionResult(AgentActionType actionType, Map<String, Object> result) {
+    private void updateStateFromActionResult(AgentActionType actionType, Map<String, Object> result) throws JsonProcessingException {
         switch (actionType) {
             case ANALYZE_TEST_STABILITY, ANALYZE_FAILURE -> {
                 if (currentTestAnalysis == null) {
@@ -504,7 +587,9 @@ public class FlakyTestAgent extends BaseAgent {
                 currentTestAnalysis.putAll(result);
             }
             case SUGGEST_FIX -> {
-                lastAppliedFix = (String) result.get("fixedTestCode");
+                Object fixed = result.get("fixedTestCode");
+
+                lastAppliedFix = objectMapper.writeValueAsString(fixed);
             }
             case EXECUTE_TEST -> {
                 // This is verification

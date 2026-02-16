@@ -85,7 +85,7 @@ public class WriteTestFileTool implements AgentTool {
             result.put("fileName", fileName);
             result.put("fileSize", testCode.length());
             result.put("status", "DRAFT");
-            result.put("location", "uat-test-runner/drafts/");
+            result.put("location", "playwright-tests/drafts/");
 
             log.info("✅ Wrote Playwright test to drafts: {}", fileName);
             log.debug("   Path: {}", draftPath.toAbsolutePath());

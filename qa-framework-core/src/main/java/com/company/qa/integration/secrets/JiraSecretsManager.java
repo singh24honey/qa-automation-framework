@@ -32,6 +32,12 @@ public class JiraSecretsManager {
         this.jiraProperties = jiraProperties;
         this.objectMapper = objectMapper;
 
+        log.info("🔍 DEBUG - JIRA Secrets Config:");
+        log.info("   enabled: {}", jiraProperties.getSecrets().isEnabled());
+        log.warn("🔍 Secrets enabled: {}", jiraProperties.getSecrets().isEnabled());  // ← Add this
+        log.warn("🔍 Region: {}", jiraProperties.getSecrets().getRegion());  // ← Add this
+
+
         if (jiraProperties.getSecrets().isEnabled()) {
             this.secretsManagerClient = SecretsManagerClient.builder()
                     .region(Region.of(jiraProperties.getSecrets().getRegion()))

@@ -53,7 +53,7 @@ public class ElementRegistryService {
         try {
             log.info("Loading Element Registry...");
 
-            ClassPathResource resource = new ClassPathResource("element-registry.json");
+            ClassPathResource resource = new ClassPathResource("element-registry-saucedemo.json");
 
             if (!resource.exists()) {
                 log.warn("element-registry.json not found, creating empty registry");

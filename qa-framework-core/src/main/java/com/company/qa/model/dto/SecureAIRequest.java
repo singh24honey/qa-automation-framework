@@ -82,6 +82,6 @@ public class SecureAIRequest {
         TEST_GENERATION,
         FAILURE_ANALYSIS,
         FIX_SUGGESTION,
-        GENERAL
+        LOCATOR_DISCOVERY, GENERAL
     }
 }

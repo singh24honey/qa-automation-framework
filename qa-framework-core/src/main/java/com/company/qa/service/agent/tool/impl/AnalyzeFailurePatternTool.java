@@ -119,6 +119,7 @@ public class AnalyzeFailurePatternTool implements AgentTool {
             result.put("rootCause", stabilityResult.getRootCause().name());
             result.put("explanation", stabilityResult.getRootCauseExplanation());
             result.put("recommendedFix", stabilityResult.getRecommendedFix());
+            result.put("testCaseName",stabilityResult.getTestName());
 
             return result;
 

@@ -281,8 +281,7 @@ public class PlaywrightTestExecutor {
         LocatorStrategy strategy;
         String value;
 
-        if (locatorString.contains("=")) {
-            // Format: "type=value" (e.g., "css=#btn", "xpath=//button")
+        if (locatorString.matches("^[a-zA-Z]+\\s*=.*")){            // Format: "type=value" (e.g., "css=#btn", "xpath=//button")
             String[] parts = locatorString.split("=", 2);
             strategy = LocatorStrategy.fromString(parts[0].trim());
             value = parts[1].trim();

@@ -78,7 +78,7 @@ redis:
 
 jira:
   secrets:
-    enabled: false  # Uses mock credentials
+    enabled: true  # Uses mock credentials
   api:
     connect-timeout-ms: 1000
     read-timeout-ms: 2000

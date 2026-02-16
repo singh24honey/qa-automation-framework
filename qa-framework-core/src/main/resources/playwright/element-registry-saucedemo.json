@@ -1,361 +1,208 @@
 {
-  "application": "SauceDemo",
-  "baseUrl": "https://www.saucedemo.com",
-  "version": "1.0",
-  "credentials": {
-    "username": "standard_user",
-    "password": "secret_sauce"
+  "application" : "SauceDemo",
+  "baseUrl" : "https://www.saucedemo.com",
+  "version" : "1.0",
+  "credentials" : {
+    "username" : "standard_user",
+    "password" : "secret_sauce"
   },
-  "pages": [
-    {
-      "name": "LoginPage",
-      "url": "/",
-      "description": "User authentication page",
-      "elements": [
-        {
-          "name": "usernameInput",
-          "description": "Username input field",
-          "primarySelector": "page.locator('[data-test=\"username\"]')",
-          "fallbackSelector": "page.locator('#user-name')",
-          "actions": ["fill", "clear"],
-          "validations": ["isVisible", "isEditable"]
+  "pages" : {
+    "LoginPage" : {
+      "url" : "/",
+      "description" : "User authentication page",
+      "elements" : {
+        "usernameInput" : {
+          "description" : "Username input field",
+          "primarySelector" : "page.locator('[data-test=\"username\"]')",
+          "fallbackSelector" : "page.locator('#user-name')",
+          "actions" : [ "fill", "clear" ],
+          "validations" : [ "isVisible", "isEditable" ]
         },
-        {
-          "name": "passwordInput",
-          "description": "Password input field",
-          "primarySelector": "page.locator('[data-test=\"password\"]')",
-          "fallbackSelector": "page.locator('#password')",
-          "actions": ["fill", "clear"],
-          "validations": ["isVisible", "isEditable"]
+        "passwordInput" : {
+          "description" : "Password input field",
+          "primarySelector" : "page.locator('[data-test=\"password\"]')",
+          "fallbackSelector" : "page.locator('#password')",
+          "actions" : [ "fill", "clear" ],
+          "validations" : [ "isVisible", "isEditable" ]
         },
-        {
-          "name": "loginButton",
-          "description": "Submit credentials button",
-          "primarySelector": "page.locator('[data-test=\"login-button\"]')",
-          "fallbackSelector": "page.locator('#login-button')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
+        "loginButton" : {
+          "description" : "Submit credentials button",
+          "primarySelector" : "page.locator('[data-test=\"login-button\"]')",
+          "fallbackSelector" : "page.locator('#login-button')",
+          "actions" : [ "click" ],
+          "validations" : [ "isVisible", "isEnabled" ]
         },
-        {
-          "name": "errorMessage",
-          "description": "Login error message",
-          "primarySelector": "page.locator('[data-test=\"error\"]')",
-          "fallbackSelector": "page.locator('.error-message-container')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
+        "errorMessage" : {
+          "description" : "Login error message",
+          "primarySelector" : "page.locator('[data-test=\"error\"]')",
+          "fallbackSelector" : "page.locator('.error-message-container')",
+          "actions" : [ ],
+          "validations" : [ "isVisible", "hasText" ]
+        },
+        "AI-discovered-element-1771080260523" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-14T14:45:58.636531Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771091118448" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-14T17:45:41.426116Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771091848335" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-14T17:57:54.587777Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771146621986" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-15T09:10:39.198866Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771147950639" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-15T09:32:36.865359Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771149245010" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-15T09:54:05.048957Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771176956751" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-15T17:35:56.755960Z",
+          "replacedLocator" : "#broken-username-id"
+        },
+        "AI-discovered-element-1771177978409" : {
+          "strategy" : "css",
+          "value" : "username",
+          "playwrightCode" : "[data-test='username']",
+          "discoveredBy" : "agent",
+          "discoveredAt" : "2026-02-15T17:52:58.416589Z",
+          "replacedLocator" : "#broken-username-id"
         }
-      ]
+      }
     },
-    {
-      "name": "ProductsPage",
-      "url": "/inventory.html",
-      "description": "Product listing page",
-      "elements": [
-        {
-          "name": "pageTitle",
-          "description": "Products page title",
-          "primarySelector": "page.locator('.title')",
-          "fallbackSelector": "page.getByText('Products')",
-          "actions": [],
-          "validations": ["isVisible", "hasText('Products')"]
+    "ProductsPage" : {
+      "url" : "/inventory.html",
+      "description" : "Product listing page",
+      "elements" : {
+        "pageTitle" : {
+          "description" : "Products page title",
+          "primarySelector" : "page.locator('.title')",
+          "fallbackSelector" : "page.getByText('Products')",
+          "actions" : [ ],
+          "validations" : [ "isVisible", "hasText('Products')" ]
         },
-        {
-          "name": "inventoryList",
-          "description": "Product list container",
-          "primarySelector": "page.locator('.inventory_list')",
-          "fallbackSelector": "page.locator('[data-test=\"inventory-list\"]')",
-          "actions": [],
-          "validations": ["isVisible", "count() > 0"]
+        "inventoryList" : {
+          "description" : "Product list container",
+          "primarySelector" : "page.locator('.inventory_list')",
+          "fallbackSelector" : "page.locator('[data-test=\"inventory-list\"]')",
+          "actions" : [ ],
+          "validations" : [ "isVisible", "count() > 0" ]
         },
-        {
-          "name": "addToCartBackpack",
-          "description": "Add Backpack to cart",
-          "primarySelector": "page.locator('[data-test=\"add-to-cart-sauce-labs-backpack\"]')",
-          "fallbackSelector": "page.getByRole('button', { name: 'Add to cart' }).first()",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "addToCartBikeLight",
-          "description": "Add Bike Light to cart",
-          "primarySelector": "page.locator('[data-test=\"add-to-cart-sauce-labs-bike-light\"]')",
-          "fallbackSelector": "page.getByText('Add to cart').nth(1)",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "shoppingCartBadge",
-          "description": "Cart item count badge",
-          "primarySelector": "page.locator('.shopping_cart_badge')",
-          "fallbackSelector": "page.locator('[data-test=\"shopping-cart-badge\"]')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "shoppingCartLink",
-          "description": "Navigate to cart",
-          "primarySelector": "page.locator('.shopping_cart_link')",
-          "fallbackSelector": "page.locator('[data-test=\"shopping-cart-link\"]')",
-          "actions": ["click"],
-          "validations": ["isVisible"]
+        "addToCartBackpack" : {
+          "description" : "Add Backpack to cart",
+          "primarySelector" : "page.locator('[data-test=\"add-to-cart-sauce-labs-backpack\"]')",
+          "fallbackSelector" : "page.getByRole('button', { name: 'Add to cart' }).first()",
+          "actions" : [ "click" ],
+          "validations" : [ "isVisible", "isEnabled" ]
         }
-      ]
+      }
     },
-    {
-      "name": "CartPage",
-      "url": "/cart.html",
-      "description": "Shopping cart page",
-      "elements": [
-        {
-          "name": "pageTitle",
-          "description": "Cart page title",
-          "primarySelector": "page.locator('.title')",
-          "fallbackSelector": "page.getByText('Your Cart')",
-          "actions": [],
-          "validations": ["isVisible", "hasText('Your Cart')"]
-        },
-        {
-          "name": "cartItem",
-          "description": "Cart item container",
-          "primarySelector": "page.locator('.cart_item')",
-          "fallbackSelector": "page.locator('[data-test=\"inventory-item\"]')",
-          "actions": [],
-          "validations": ["isVisible", "count() > 0"]
-        },
-        {
-          "name": "checkoutButton",
-          "description": "Proceed to checkout",
-          "primarySelector": "page.locator('[data-test=\"checkout\"]')",
-          "fallbackSelector": "page.locator('#checkout')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "continueShoppingButton",
-          "description": "Return to products",
-          "primarySelector": "page.locator('[data-test=\"continue-shopping\"]')",
-          "fallbackSelector": "page.getByText('Continue Shopping')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "removeBackpack",
-          "description": "Remove Backpack from cart",
-          "primarySelector": "page.locator('[data-test=\"remove-sauce-labs-backpack\"]')",
-          "fallbackSelector": "page.getByRole('button', { name: 'Remove' }).first()",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
+    "CartPage" : {
+      "url" : "/cart.html",
+      "description" : "Shopping cart page",
+      "elements" : {
+        "checkoutButton" : {
+          "description" : "Proceed to checkout",
+          "primarySelector" : "page.locator('[data-test=\"checkout\"]')",
+          "fallbackSelector" : "page.locator('#checkout')",
+          "actions" : [ "click" ],
+          "validations" : [ "isVisible", "isEnabled" ]
         }
-      ]
+      }
     },
-    {
-      "name": "CheckoutInfoPage",
-      "url": "/checkout-step-one.html",
-      "description": "Checkout information entry",
-      "elements": [
-        {
-          "name": "pageTitle",
-          "description": "Checkout info title",
-          "primarySelector": "page.locator('.title')",
-          "fallbackSelector": "page.getByText('Checkout: Your Information')",
-          "actions": [],
-          "validations": ["isVisible"]
-        },
-        {
-          "name": "firstNameInput",
-          "description": "First name field",
-          "primarySelector": "page.locator('[data-test=\"firstName\"]')",
-          "fallbackSelector": "page.locator('#first-name')",
-          "actions": ["fill", "clear"],
-          "validations": ["isVisible", "isEditable"]
-        },
-        {
-          "name": "lastNameInput",
-          "description": "Last name field",
-          "primarySelector": "page.locator('[data-test=\"lastName\"]')",
-          "fallbackSelector": "page.locator('#last-name')",
-          "actions": ["fill", "clear"],
-          "validations": ["isVisible", "isEditable"]
-        },
-        {
-          "name": "postalCodeInput",
-          "description": "Postal code field",
-          "primarySelector": "page.locator('[data-test=\"postalCode\"]')",
-          "fallbackSelector": "page.locator('#postal-code')",
-          "actions": ["fill", "clear"],
-          "validations": ["isVisible", "isEditable"]
-        },
-        {
-          "name": "continueButton",
-          "description": "Continue to overview",
-          "primarySelector": "page.locator('[data-test=\"continue\"]')",
-          "fallbackSelector": "page.locator('#continue')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "cancelButton",
-          "description": "Cancel checkout",
-          "primarySelector": "page.locator('[data-test=\"cancel\"]')",
-          "fallbackSelector": "page.getByText('Cancel')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
+    "CheckoutInfoPage" : {
+      "url" : "/checkout-step-one.html",
+      "description" : "Checkout information entry",
+      "elements" : {
+        "firstNameInput" : {
+          "description" : "First name field",
+          "primarySelector" : "page.locator('[data-test=\"firstName\"]')",
+          "fallbackSelector" : "page.locator('#first-name')",
+          "actions" : [ "fill", "clear" ],
+          "validations" : [ "isVisible", "isEditable" ]
         }
-      ]
+      }
     },
-    {
-      "name": "CheckoutOverviewPage",
-      "url": "/checkout-step-two.html",
-      "description": "Order review and confirmation",
-      "elements": [
-        {
-          "name": "pageTitle",
-          "description": "Checkout overview title",
-          "primarySelector": "page.locator('.title')",
-          "fallbackSelector": "page.getByText('Checkout: Overview')",
-          "actions": [],
-          "validations": ["isVisible"]
-        },
-        {
-          "name": "cartItem",
-          "description": "Ordered item",
-          "primarySelector": "page.locator('.cart_item')",
-          "fallbackSelector": "page.locator('[data-test=\"inventory-item\"]')",
-          "actions": [],
-          "validations": ["isVisible", "count() > 0"]
-        },
-        {
-          "name": "subtotal",
-          "description": "Subtotal amount",
-          "primarySelector": "page.locator('.summary_subtotal_label')",
-          "fallbackSelector": "page.locator('[data-test=\"subtotal-label\"]')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "tax",
-          "description": "Tax amount",
-          "primarySelector": "page.locator('.summary_tax_label')",
-          "fallbackSelector": "page.locator('[data-test=\"tax-label\"]')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "total",
-          "description": "Total amount",
-          "primarySelector": "page.locator('.summary_total_label')",
-          "fallbackSelector": "page.locator('[data-test=\"total-label\"]')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "finishButton",
-          "description": "Complete order",
-          "primarySelector": "page.locator('[data-test=\"finish\"]')",
-          "fallbackSelector": "page.locator('#finish')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "cancelButton",
-          "description": "Cancel order",
-          "primarySelector": "page.locator('[data-test=\"cancel\"]')",
-          "fallbackSelector": "page.getByText('Cancel')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
+    "CheckoutOverviewPage" : {
+      "url" : "/checkout-step-two.html",
+      "description" : "Order review and confirmation",
+      "elements" : {
+        "finishButton" : {
+          "description" : "Complete order",
+          "primarySelector" : "page.locator('[data-test=\"finish\"]')",
+          "fallbackSelector" : "page.locator('#finish')",
+          "actions" : [ "click" ],
+          "validations" : [ "isVisible", "isEnabled" ]
         }
-      ]
+      }
     },
-    {
-      "name": "CheckoutCompletePage",
-      "url": "/checkout-complete.html",
-      "description": "Order confirmation page",
-      "elements": [
-        {
-          "name": "pageTitle",
-          "description": "Completion title",
-          "primarySelector": "page.locator('.title')",
-          "fallbackSelector": "page.getByText('Checkout: Complete!')",
-          "actions": [],
-          "validations": ["isVisible"]
-        },
-        {
-          "name": "completeHeader",
-          "description": "Thank you header",
-          "primarySelector": "page.locator('.complete-header')",
-          "fallbackSelector": "page.getByText('Thank you for your order!')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "completeText",
-          "description": "Completion message",
-          "primarySelector": "page.locator('.complete-text')",
-          "fallbackSelector": "page.locator('[data-test=\"complete-text\"]')",
-          "actions": [],
-          "validations": ["isVisible", "hasText"]
-        },
-        {
-          "name": "backHomeButton",
-          "description": "Return to products",
-          "primarySelector": "page.locator('[data-test=\"back-to-products\"]')",
-          "fallbackSelector": "page.locator('#back-to-products')",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
+    "CheckoutCompletePage" : {
+      "url" : "/checkout-complete.html",
+      "description" : "Order confirmation page",
+      "elements" : {
+        "completeHeader" : {
+          "description" : "Thank you header",
+          "primarySelector" : "page.locator('.complete-header')",
+          "fallbackSelector" : "page.getByText('Thank you for your order!')",
+          "actions" : [ ],
+          "validations" : [ "isVisible", "hasText" ]
         }
-      ]
+      }
     },
-    {
-      "name": "CommonElements",
-      "url": "*",
-      "description": "Elements present on all pages",
-      "elements": [
-        {
-          "name": "burgerMenu",
-          "description": "Navigation menu button",
-          "primarySelector": "page.locator('#react-burger-menu-btn')",
-          "fallbackSelector": "page.getByRole('button', { name: 'Open Menu' })",
-          "actions": ["click"],
-          "validations": ["isVisible", "isEnabled"]
-        },
-        {
-          "name": "logoutLink",
-          "description": "Logout navigation item",
-          "primarySelector": "page.locator('#logout_sidebar_link')",
-          "fallbackSelector": "page.getByText('Logout')",
-          "actions": ["click"],
-          "validations": ["isVisible"]
-        },
-        {
-          "name": "closeMenu",
-          "description": "Close navigation menu",
-          "primarySelector": "page.locator('#react-burger-cross-btn')",
-          "fallbackSelector": "page.getByRole('button', { name: 'Close Menu' })",
-          "actions": ["click"],
-          "validations": ["isVisible"]
+    "CommonElements" : {
+      "url" : "*",
+      "description" : "Elements present on all pages",
+      "elements" : {
+        "burgerMenu" : {
+          "description" : "Navigation menu button",
+          "primarySelector" : "page.locator('#react-burger-menu-btn')",
+          "fallbackSelector" : "page.getByRole('button', { name: 'Open Menu' })",
+          "actions" : [ "click" ],
+          "validations" : [ "isVisible", "isEnabled" ]
         }
-      ]
+      }
     }
-  ],
-  "workflows": [
-    {
-      "name": "CompleteCheckout",
-      "description": "Full shopping flow from login to order completion",
-      "steps": [
-        "LoginPage.usernameInput.fill('standard_user')",
-        "LoginPage.passwordInput.fill('secret_sauce')",
-        "LoginPage.loginButton.click()",
-        "ProductsPage.addToCartBackpack.click()",
-        "ProductsPage.addToCartBikeLight.click()",
-        "ProductsPage.shoppingCartLink.click()",
-        "CartPage.checkoutButton.click()",
-        "CheckoutInfoPage.firstNameInput.fill('John')",
-        "CheckoutInfoPage.lastNameInput.fill('Doe')",
-        "CheckoutInfoPage.postalCodeInput.fill('12345')",
-        "CheckoutInfoPage.continueButton.click()",
-        "CheckoutOverviewPage.finishButton.click()",
-        "CheckoutCompletePage.completeHeader.isVisible()"
-      ]
+  },
+  "workflows" : {
+    "CompleteCheckout" : {
+      "description" : "Full shopping flow from login to order completion",
+      "steps" : [ "LoginPage.usernameInput.fill('standard_user')", "LoginPage.passwordInput.fill('secret_sauce')", "LoginPage.loginButton.click()", "ProductsPage.addToCartBackpack.click()", "ProductsPage.shoppingCartLink.click()", "CartPage.checkoutButton.click()", "CheckoutInfoPage.firstNameInput.fill('John')", "CheckoutInfoPage.lastNameInput.fill('Doe')", "CheckoutInfoPage.postalCodeInput.fill('12345')", "CheckoutOverviewPage.finishButton.click()", "CheckoutCompletePage.completeHeader.isVisible()" ]
     }
-  ]
+  },
+  "lastUpdated" : "2026-02-15T17:52:58.416532Z"
 }
