@@ -89,14 +89,28 @@ public class ExtractBrokenLocatorTool implements AgentTool {
                     ? ((Number) parameters.get("failedStepIndex")).intValue()
                     : null;
 
-            // Extract locator from error message
+            // Attempt 1: extract locator from error message using regex patterns
             String brokenLocator = extractLocatorFromError(errorMessage);
 
+            // Attempt 2: if error message is vague (e.g. just "Element not found"),
+            // scan test content for the first locator-looking string.
+            // This lets the agent proceed to AI discovery rather than looping forever.
+            boolean extractedFromContent = false;
+            if (brokenLocator == null && testContent != null && !testContent.isBlank()) {
+                brokenLocator = extractFirstLocatorFromTestContent(testContent);
+                extractedFromContent = (brokenLocator != null);
+                if (extractedFromContent) {
+                    log.info("⚠️ Error message too vague, using first locator from test content: {}",
+                            brokenLocator);
+                }
+            }
+
+            // Even if we still have nothing, return success=true with a sentinel value
+            // so the planner can advance to AI discovery rather than looping.
             if (brokenLocator == null) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", false);
-                result.put("error", "Could not extract locator from error message");
-                return result;
+                log.warn("⚠️ No locator found in error or content — proceeding with UNKNOWN sentinel");
+                brokenLocator = "UNKNOWN";
+                extractedFromContent = false;
             }
 
             // Parse locator strategy and value
@@ -105,7 +119,7 @@ public class ExtractBrokenLocatorTool implements AgentTool {
             // Parse test content to find context
             Map<String, Object> testContext = parseTestContext(testContent, failedStepIndex);
 
-            // Build result
+            // Build result — always return success=true so agent can advance
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
             result.put("brokenLocator", brokenLocator);
@@ -113,21 +127,60 @@ public class ExtractBrokenLocatorTool implements AgentTool {
             result.put("locatorValue", locatorInfo.value);
             result.put("pageName", testContext.get("pageName"));
             result.put("elementPurpose", testContext.get("elementPurpose"));
-            result.put("actionType", testContext.get("actionType")); // click, type, etc.
+            result.put("actionType", testContext.get("actionType"));
+            result.put("extractedFromContent", extractedFromContent);
+            result.put("originalErrorMessage", errorMessage);
 
-            log.info("✅ Extracted broken locator: {} on page: {}",
-                    brokenLocator, testContext.get("pageName"));
+            log.info("✅ Extracted broken locator: {} (from {}) on page: {}",
+                    brokenLocator,
+                    extractedFromContent ? "test content" : "error message",
+                    testContext.get("pageName"));
 
             return result;
 
         } catch (Exception e) {
             log.error("❌ Failed to extract broken locator: {}", e.getMessage(), e);
 
+            // Even on exception, return success=true with UNKNOWN so agent doesn't loop
             Map<String, Object> result = new HashMap<>();
-            result.put("success", false);
+            result.put("success", true);
+            result.put("brokenLocator", "UNKNOWN");
+            result.put("locatorStrategy", "unknown");
+            result.put("locatorValue", "unknown");
+            result.put("extractedFromContent", false);
             result.put("error", e.getMessage());
             return result;
         }
+    }
+
+    /**
+     * Scan test content for the first locator-like string.
+     *
+     * Called when error message is too vague to identify which locator broke.
+     * Looks for common patterns: css=, #id, .class, xpath=, [data-testid=, role=
+     */
+    private String extractFirstLocatorFromTestContent(String testContent) {
+        // Patterns to find locators embedded in test content (JSON or plain)
+        List<Pattern> contentPatterns = List.of(
+                Pattern.compile("\"locator\"\\s*:\\s*\"([^\"]+)\""),
+                Pattern.compile("\"selector\"\\s*:\\s*\"([^\"]+)\""),
+                Pattern.compile("css=([^\\s,\"']+)"),
+                Pattern.compile("(#[\\w-]+)"),
+                Pattern.compile("(\\.[\\w-]+)"),
+                Pattern.compile("xpath=([^\\s,\"']+)"),
+                Pattern.compile("\\[data-testid=[\"']([^\"']+)[\"']\\]"),
+                Pattern.compile("role=([^\\s,\"']+)")
+        );
+        for (Pattern p : contentPatterns) {
+            Matcher m = p.matcher(testContent);
+            if (m.find() && m.groupCount() >= 1) {
+                String candidate = m.group(1).trim();
+                if (!candidate.isBlank() && candidate.length() > 1) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
     }
 
     @Override

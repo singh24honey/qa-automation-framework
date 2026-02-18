@@ -106,6 +106,14 @@ public class AnalyzeTestStabilityTool implements AgentTool {
 
 
                 for (int i = 0; i < runCount; i++) {
+                    // Check cooperative stop flag and thread interrupt before each run.
+                    // future.cancel(true) sets the interrupt flag; we also check the
+                    // stop flag in AgentOrchestrator for explicit user-initiated stops.
+                    if (Thread.currentThread().isInterrupted()) {
+                        log.info("🛑 Stop requested — aborting run loop at run {}/{}", i + 1, runCount);
+                        Thread.currentThread().interrupt(); // restore flag for BaseAgent to see
+                        break;
+                    }
                     log.info("  Run {}/{} for test: {}", i + 1, runCount, test.getName());
 
                     BrowserContext browserContext = browser.newContext();
@@ -140,14 +148,31 @@ public class AnalyzeTestStabilityTool implements AgentTool {
                         log.info("    Result: {}", allStepsPassed ? "PASS" : "FAIL");
 
                     } catch (Exception e) {
-                        log.error("    Test execution failed: {}", e.getMessage());
+                        String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                        log.error("    Test execution failed: {}", errMsg);
+
+                        // TargetClosedError means the browser was killed by thread interrupt
+                        // (future.cancel(true)). Continuing the loop would just throw the same
+                        // error on every subsequent run — break out immediately.
+                        if (errMsg.contains("TargetClosedError") || errMsg.contains("Target page, context or browser has been closed")
+                                || Thread.currentThread().isInterrupted()) {
+                            log.info("🛑 Browser closed due to stop request — aborting remaining runs");
+                            results.add(false);
+                            errorMessages.add(String.format("Run %d: aborted (stop requested)", i + 1));
+                            pattern.append("F");
+                            executionIds.add(UUID.randomUUID().toString());
+                            try { page.close(); } catch (Exception ignored) {}
+                            try { browserContext.close(); } catch (Exception ignored) {}
+                            break; // stop the run loop
+                        }
+
                         results.add(false);
-                        errorMessages.add(String.format("Run %d: %s", i + 1, e.getMessage()));
+                        errorMessages.add(String.format("Run %d: %s", i + 1, errMsg));
                         pattern.append("F");
                         executionIds.add(UUID.randomUUID().toString());
                     } finally {
-                        page.close();
-                        browserContext.close();
+                        try { page.close(); } catch (Exception ignored) {}
+                        try { browserContext.close(); } catch (Exception ignored) {}
                     }
                 }
 

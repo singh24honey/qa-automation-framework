@@ -1,0 +1,179 @@
+package com.company.qa.service.playwright;
+
+import com.company.qa.model.intent.IntentActionType;
+import com.company.qa.model.intent.IntentTestStep;
+import com.company.qa.model.intent.TestIntent;
+import com.company.qa.model.intent.TestScenario;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * Validates TestIntent before rendering.
+ * Catches AI mistakes early with clear error messages.
+ *
+ * @since Zero-Hallucination Pipeline
+ */
+@Slf4j
+@Service
+public class TestIntentValidator {
+
+    private static final Pattern JAVA_IDENTIFIER = Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*$");
+    private static final int MAX_STEPS_WARNING = 20;
+
+    // Patterns that indicate AI leaked Java code into locators
+    private static final List<String> FORBIDDEN_LOCATOR_PATTERNS = List.of(
+            "page.locator", "page.getByRole", "page.getByText",
+            "page.getByLabel", "page.getByTestId",
+            "Playwright.create", "Thread.sleep",
+            "BrowserType", "Browser.newContext"
+    );
+
+    /**
+     * Validate a TestIntent. Returns errors and warnings.
+     */
+    public ValidationResult validate(TestIntent intent) {
+        ValidationResult result = ValidationResult.builder().build();
+
+        if (intent == null) {
+            result.addError("TestIntent is null");
+            return result;
+        }
+
+        validateClassName(intent, result);
+        validateScenarios(intent, result);
+
+        if (result.isValid()) {
+            log.debug("TestIntent validation passed: {} scenarios, {} total steps",
+                    intent.getScenarioCount(), intent.getTotalStepCount());
+        } else {
+            log.warn("TestIntent validation failed with {} errors: {}",
+                    result.getErrors().size(), result.getErrors());
+        }
+
+        return result;
+    }
+
+    // R1: Valid class name
+    private void validateClassName(TestIntent intent, ValidationResult result) {
+        String name = intent.getTestClassName();
+        if (name == null || name.isBlank()) {
+            result.addError("testClassName is required");
+            return;
+        }
+        if (!JAVA_IDENTIFIER.matcher(name).matches()) {
+            result.addError("Invalid testClassName '" + name + "': must be a valid Java identifier");
+            return;
+        }
+        if (!name.endsWith("Test")) {
+            result.addWarning("testClassName '" + name + "' should end with 'Test' by convention");
+        }
+    }
+
+    // R2-R4, R10-R11: Scenario-level validation
+    private void validateScenarios(TestIntent intent, ValidationResult result) {
+        List<TestScenario> scenarios = intent.getScenarios();
+
+        // R2
+        if (scenarios == null || scenarios.isEmpty()) {
+            result.addError("TestIntent must have at least one scenario");
+            return;
+        }
+
+        // R3: Unique names
+        Set<String> names = new HashSet<>();
+        for (TestScenario scenario : scenarios) {
+            if (scenario.getName() != null && !names.add(scenario.getName())) {
+                result.addError("Duplicate scenario name: '" + scenario.getName() + "'");
+            }
+        }
+
+        // Validate each scenario
+        for (int i = 0; i < scenarios.size(); i++) {
+            TestScenario scenario = scenarios.get(i);
+            String label = "Scenario[" + i + "] '" + scenario.getName() + "'";
+            validateScenario(scenario, label, result);
+        }
+    }
+
+    private void validateScenario(TestScenario scenario, String label, ValidationResult result) {
+        // R4
+        if (scenario.getSteps() == null || scenario.getSteps().isEmpty()) {
+            result.addError(label + " has no steps");
+            return;
+        }
+
+        // R10
+        if (!scenario.hasAssertions()) {
+            result.addError(label + " has no assertions — every test must assert something");
+        }
+
+        // R11
+        if (scenario.getStepCount() > MAX_STEPS_WARNING) {
+            result.addWarning(label + " has " + scenario.getStepCount() + " steps — consider splitting");
+        }
+
+        // Validate each step
+        for (int j = 0; j < scenario.getSteps().size(); j++) {
+            IntentTestStep step = scenario.getSteps().get(j);
+            String stepLabel = label + " → Step[" + j + "]";
+            validateStep(step, stepLabel, result);
+        }
+    }
+
+    private void validateStep(IntentTestStep step, String label, ValidationResult result) {
+        // R5: Valid action
+        if (step.getAction() == null) {
+            result.addError(label + ": action is required");
+            return;
+        }
+
+        IntentActionType action = step.getAction();
+
+        // R6: Locator required
+        if (action.requiresLocator() && isBlank(step.getLocator())) {
+            result.addError(label + ": " + action.name() + " requires a locator");
+        }
+
+        // R7: Value required
+        if (action.requiresValue() && isBlank(step.getValue())) {
+            result.addError(label + ": " + action.name() + " requires a value");
+        }
+
+        // R8 + R9: Locator format (only if locator is present)
+        if (!isBlank(step.getLocator())) {
+            validateLocatorFormat(step.getLocator(), label, result);
+        }
+    }
+
+    // R8 + R9: No Java code in locators
+    private void validateLocatorFormat(String locator, String label, ValidationResult result) {
+        for (String forbidden : FORBIDDEN_LOCATOR_PATTERNS) {
+            if (locator.contains(forbidden)) {
+                result.addError(label + ": locator contains Java code '" + forbidden
+                        + "' — use selector-only format (e.g., 'css=[data-test=\"username\"]')");
+                return;
+            }
+        }
+
+        // Validate strategy prefix if present
+        if (locator.contains("=")) {
+            String strategy = locator.substring(0, locator.indexOf('=')).trim().toLowerCase();
+            Set<String> validStrategies = Set.of(
+                    "role", "label", "text", "testid", "css", "xpath", "id", "name", "class"
+            );
+            if (!validStrategies.contains(strategy)) {
+                result.addError(label + ": unknown locator strategy '" + strategy
+                        + "'. Valid: " + validStrategies);
+            }
+        }
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+}

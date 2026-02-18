@@ -64,6 +64,14 @@ public abstract class BaseAgent {
     protected AgentToolRegistry toolRegistry;
 
     /**
+     * Injected to check the cooperative stop flag each iteration.
+     * Lazy to avoid circular dependency (agents register with orchestrator at startup).
+     */
+    @Autowired
+    @org.springframework.context.annotation.Lazy
+    protected AgentOrchestrator agentOrchestrator;
+
+    /**
      * Constructor - all services injected by Spring.
      */
     public BaseAgent(
@@ -73,13 +81,13 @@ public abstract class BaseAgent {
             AIBudgetService budgetService,
             AgentMemoryService memoryService,
             AgentToolRegistry toolRegistry)   // ✅ CORRECT
-     {
+    {
         this.aiGateway = aiGateway;
         this.auditService = auditService;
         this.approvalService = approvalService;
         this.budgetService = budgetService;
         this.memoryService = memoryService;
-         this.toolRegistry = toolRegistry;  // ✅ Tool registry is a singleton bean
+        this.toolRegistry = toolRegistry;  // ✅ Tool registry is a singleton bean
     }
 
 
@@ -194,6 +202,20 @@ public abstract class BaseAgent {
                 // Save context to Redis (for resume capability)
                 saveContext(executionId, context);
 
+                // Check cooperative stop flag — set by AgentOrchestrator.stopAgent().
+                // This is the only reliable way to stop agents that are blocked inside
+                // Playwright browser operations: future.cancel(true) sets the thread
+                // interrupt flag but Playwright's I/O loops don't check it.
+                // By checking here (between actions, not inside them), we guarantee
+                // the agent stops cleanly at the next iteration boundary.
+                if (agentOrchestrator != null && agentOrchestrator.isStopRequested(executionId)) {
+                    log.info("🛑 Stop requested — terminating agent loop: {}", executionId);
+                    AgentResult result = buildStoppedResult(context, executionId);
+                    executionService.recordResult(executionId, result);
+                    updateExecution(executionId, context, AgentStatus.STOPPED);
+                    return result;
+                }
+
                 // Check if goal achieved
                 if (isGoalAchieved(context)) {
                     log.info("✅ Goal achieved at iteration {}", context.getCurrentIteration());
@@ -221,7 +243,12 @@ public abstract class BaseAgent {
                 long duration = System.currentTimeMillis() - startTime;
 
                 // Record action in history
+                // NOTE: iteration MUST be set here so hasCompletedAction() filters correctly.
+                // If iteration is omitted (defaults to 0), any call to moveToNextTest() sets
+                // currentTestStartIteration to a non-zero value, causing all history entries
+                // to fail the ">= testStartIteration" filter — producing an infinite loop.
                 AgentHistoryEntry historyEntry = AgentHistoryEntry.builder()
+                        .iteration(context.getCurrentIteration())
                         .actionType(plan.getNextAction())
                         .actionInput(plan.getActionParameters())
                         .actionOutput(actionResult.getOutput())
@@ -229,6 +256,7 @@ public abstract class BaseAgent {
                         .errorMessage(actionResult.getErrorMessage())
                         .durationMs((int) duration)
                         .aiCost(actionResult.getAiCost())
+                        .timestamp(java.time.Instant.now())
                         .build();
 
                 context.addToHistory(historyEntry);
@@ -348,6 +376,25 @@ public abstract class BaseAgent {
     /**
      * Build budget exceeded result.
      */
+    /**
+     * Build stopped result — agent was terminated by user request.
+     */
+    protected AgentResult buildStoppedResult(AgentContext context, UUID executionId) {
+        return AgentResult.builder()
+                .executionId(executionId)
+                .status(AgentStatus.STOPPED)
+                .goal(context.getGoal())
+                .iterationsCompleted(context.getCurrentIteration())
+                .outputs(context.getWorkProducts())
+                .errorMessage("Agent stopped by user request")
+                .totalAICost(context.getTotalAICost())
+                .totalDuration(java.time.Duration.between(context.getStartedAt(), java.time.Instant.now()))
+                .startedAt(context.getStartedAt())
+                .completedAt(java.time.Instant.now())
+                .summary("Stopped at iteration " + context.getCurrentIteration())
+                .build();
+    }
+
     protected AgentResult buildBudgetExceededResult(AgentContext context, UUID executionId) {
         return AgentResult.builder()
                 .executionId(executionId)

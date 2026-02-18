@@ -1,0 +1,94 @@
+.agent-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* Size variants */
+.agent-status-badge.size-small {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.agent-status-badge.size-medium {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.agent-status-badge.size-large {
+  padding: 6px 16px;
+  font-size: 14px;
+}
+
+/* Status colors */
+.agent-status-badge.status-running {
+  background-color: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #90caf9;
+}
+
+.agent-status-badge.status-success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #81c784;
+}
+
+.agent-status-badge.status-error {
+  background-color: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.agent-status-badge.status-stopped {
+  background-color: #f5f5f5;
+  color: #616161;
+  border: 1px solid #bdbdbd;
+}
+
+.agent-status-badge.status-timeout {
+  background-color: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffb74d;
+}
+
+.agent-status-badge.status-warning {
+  background-color: #fff8e1;
+  color: #f57c00;
+  border: 1px solid #ffcc80;
+}
+
+.agent-status-badge.status-default {
+  background-color: #f5f5f5;
+  color: #424242;
+  border: 1px solid #e0e0e0;
+}
+
+/* Running indicator animation */
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-indicator.running {
+  background-color: #1976d2;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}

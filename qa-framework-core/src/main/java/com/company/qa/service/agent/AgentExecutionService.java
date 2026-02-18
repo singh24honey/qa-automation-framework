@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -42,12 +44,6 @@ public class AgentExecutionService {
     private final AgentExecutionRepository executionRepository;
     private final AgentActionHistoryRepository actionHistoryRepository;
     private final ObjectMapper objectMapper;
-
-    /**
-     * Create new agent execution record.
-     *
-     * Called when agent starts.
-     */
 
     /**
      * Create new agent execution record.
@@ -96,12 +92,15 @@ public class AgentExecutionService {
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
 
         execution.setStatus(status);
-        execution.setCurrentIteration(context.getCurrentIteration());
-        execution.setTotalAICost(BigDecimal.valueOf(context.getTotalAICost()));
 
-        // Convert work products to map
-        if (context.getWorkProducts() != null && !context.getWorkProducts().isEmpty()) {
-            execution.setOutputs(context.getWorkProducts());
+        // context may be null when called from stopAgent (future cancelled before context available)
+        if (context != null) {
+            execution.setCurrentIteration(context.getCurrentIteration());
+            execution.setTotalAICost(BigDecimal.valueOf(context.getTotalAICost()));
+
+            if (context.getWorkProducts() != null && !context.getWorkProducts().isEmpty()) {
+                execution.setOutputs(context.getWorkProducts());
+            }
         }
 
         // Set completion time if terminal status
@@ -114,7 +113,22 @@ public class AgentExecutionService {
         executionRepository.save(execution);
 
         log.debug("Updated execution: {} - status: {}, iteration: {}",
-                executionId, status, context.getCurrentIteration());
+                executionId, status, context != null ? context.getCurrentIteration() : "N/A");
+    }
+
+    /**
+     * Mark execution as stopped without requiring an AgentContext.
+     * Used by AgentOrchestrator.stopAgent() where the context
+     * is no longer accessible after future.cancel().
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void stopExecution(UUID executionId) {
+        executionRepository.findById(executionId).ifPresent(execution -> {
+            execution.setStatus(AgentStatus.STOPPED);
+            execution.setCompletedAt(Instant.now());
+            executionRepository.save(execution);
+            log.info("Marked execution as STOPPED: {}", executionId);
+        });
     }
 
     /**
@@ -200,6 +214,15 @@ public class AgentExecutionService {
      */
     public List<AgentActionHistory> getActions(UUID executionId) {
         return actionHistoryRepository.findByAgentExecutionIdOrderByIterationAsc(executionId);
+    }
+
+    /**
+     * Get all executions, most recent first, up to limit.
+     */
+    public List<AgentExecution> getAllExecutions(int limit) {
+        return executionRepository.findByOrderByStartedAtDesc(
+                PageRequest.of(0, limit)
+        ).getContent();
     }
 
     /**

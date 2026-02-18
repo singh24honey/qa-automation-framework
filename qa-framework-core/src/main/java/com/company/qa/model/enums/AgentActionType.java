@@ -22,6 +22,7 @@ public enum AgentActionType {
     PLAN_NEXT_STEP,
 
     DISCOVER_LOCATOR,
+    EXTRACT_BROKEN_LOCATOR,     // SelfHealingAgent: extract broken locator from failure logs
 
     // ========== Test Execution Actions ==========
     EXECUTE_TEST,
@@ -57,6 +58,6 @@ public enum AgentActionType {
     INITIALIZE,
     FINALIZE,
     ABORT,
-    COMPLETE, RETRY_ACTION,
-    EXTRACT_BROKEN_LOCATOR
+    COMPLETE, RETRY_ACTION
+
 }

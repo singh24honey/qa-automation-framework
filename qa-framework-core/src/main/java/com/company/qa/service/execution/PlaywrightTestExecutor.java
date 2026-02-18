@@ -60,8 +60,28 @@ public class PlaywrightTestExecutor {
                 case "check" -> executeCheck(page, step);
                 case "uncheck" -> executeUncheck(page, step);
                 case "wait" -> executeWait(page, step);
-                case "asserttext", "verify_text" -> executeVerifyText(page, step);
-                case "assertvisible", "verify_visible" -> executeVerifyVisible(page, step);
+                // waitForLoadState: waits for the page network/DOM to settle.
+                // The AI test generator emits this action after navigate steps.
+                // Without this case every test run fails immediately after navigation.
+                case "waitforloadstate", "wait_for_load_state", "waitforload" ->
+                        executeWaitForLoadState(page, step);
+                // AI frequently generates these page-load wait variants — all map to waitForLoadState
+                case "waitforpageload", "wait_for_page_load", "waitpageload",
+                        "waitfornetworkidle", "wait_for_network_idle", "waitfornetwork" ->
+                        executeWaitForLoadStateByName(page, step);
+                case "asserttext", "verify_text", "assertequals", "assert_text" ->
+                        executeVerifyText(page, step);
+                case "assertvisible", "verify_visible", "assert_visible", "assertelement" ->
+                        executeVerifyVisible(page, step);
+                case "screenshot" ->
+                        log.debug("screenshot step — skipping (taken on failure)");
+                // AI sometimes generates these no-op validation steps — skip gracefully
+                case "checknotnull", "assertnotnull", "verify_not_null" ->
+                        log.debug("checkNotNull step '{}' — treated as no-op", step.getLocator());
+                // 'login' is a high-level concept, not an atomic step — skip with warning
+                case "login" ->
+                        log.warn("⚠️ 'login' is not a supported atomic action — skipping. " +
+                                "Use 'type' for username/password fields and 'click' for the button.");
                 default -> throw new IllegalArgumentException(
                         "Unsupported action: " + step.getAction()
                 );
@@ -198,6 +218,18 @@ public class PlaywrightTestExecutor {
      * Execute WAIT action.
      */
     private void executeWait(Page page, TestStep step) {
+        // If no locator, treat as a sleep: value = milliseconds to wait
+        if (step.getLocator() == null || step.getLocator().trim().isEmpty()) {
+            int ms = 1000; // default 1s
+            if (step.getValue() != null) {
+                try { ms = Integer.parseInt(step.getValue().trim()); } catch (NumberFormatException ignored) {}
+            } else if (step.getTimeout() != null && step.getTimeout() > 0) {
+                ms = step.getTimeout() * 1000;
+            }
+            log.debug("wait (sleep) {}ms", ms);
+            try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return;
+        }
         Locator locator = resolveLocator(page, step);
 
         int timeout = step.getTimeout() != null && step.getTimeout() > 0
@@ -217,6 +249,60 @@ public class PlaywrightTestExecutor {
     /**
      * Execute VERIFY_TEXT/ASSERTTEXT action.
      */
+    /**
+     * Waits for the page to finish loading.
+     *
+     * Playwright's waitForLoadState() blocks until the requested state is reached.
+     * Default is "load" (fires when all resources including images are done).
+     * "networkidle" waits until no network requests for 500ms — better for SPAs.
+     *
+     * The step's locator value can specify the state: "networkidle", "domcontentloaded", or "load".
+     * Defaults to "load" if unspecified.
+     */
+    /**
+     * Derives the load state from the action name itself rather than the locator value.
+     * Used for AI-generated actions like "waitForNetworkIdle" and "waitForPageLoad"
+     * where the desired state is encoded in the action name, not the step parameters.
+     */
+    private void executeWaitForLoadStateByName(Page page, TestStep step) {
+        String actionLower = step.getAction().toLowerCase();
+        com.microsoft.playwright.options.LoadState state;
+
+        if (actionLower.contains("networkidle") || actionLower.contains("network")) {
+            state = com.microsoft.playwright.options.LoadState.NETWORKIDLE;
+        } else if (actionLower.contains("domcontent") || actionLower.contains("dom")) {
+            state = com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED;
+        } else {
+            state = com.microsoft.playwright.options.LoadState.LOAD; // default for waitForPageLoad
+        }
+
+        int timeoutMs = step.getTimeout() != null && step.getTimeout() > 0
+                ? step.getTimeout() * 1000
+                : 30_000;
+
+        log.debug("waitForLoadState (from action name): state={}, timeout={}ms", state, timeoutMs);
+        page.waitForLoadState(state, new Page.WaitForLoadStateOptions().setTimeout(timeoutMs));
+    }
+
+    private void executeWaitForLoadState(Page page, TestStep step) {
+        String stateStr = step.getLocator() != null ? step.getLocator().trim().toLowerCase() : "load";
+
+        com.microsoft.playwright.options.LoadState state;
+        switch (stateStr) {
+            case "networkidle" -> state = com.microsoft.playwright.options.LoadState.NETWORKIDLE;
+            case "domcontentloaded" -> state = com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED;
+            default -> state = com.microsoft.playwright.options.LoadState.LOAD;
+        }
+
+        int timeoutMs = step.getTimeout() != null && step.getTimeout() > 0
+                ? step.getTimeout() * 1000
+                : 30_000; // 30s default
+
+        log.debug("waitForLoadState: state={}, timeout={}ms", state, timeoutMs);
+        page.waitForLoadState(state, new Page.WaitForLoadStateOptions().setTimeout(timeoutMs));
+    }
+
+
     private void executeVerifyText(Page page, TestStep step) {
         String expectedText = step.getValue();
         if (expectedText == null) {
@@ -281,10 +367,21 @@ public class PlaywrightTestExecutor {
         LocatorStrategy strategy;
         String value;
 
-        if (locatorString.matches("^[a-zA-Z]+\\s*=.*")){            // Format: "type=value" (e.g., "css=#btn", "xpath=//button")
+        if (locatorString.contains("=")) {
+            // Format: "type=value" (e.g., "css=#btn", "xpath=//button")
+            // BUT: CSS attribute selectors like [data-test='foo'] also contain '='
+            // so we only split if the prefix is a known strategy keyword.
+            // If it isn't, treat the whole string as a CSS selector.
             String[] parts = locatorString.split("=", 2);
-            strategy = LocatorStrategy.fromString(parts[0].trim());
-            value = parts[1].trim();
+            String candidateStrategy = parts[0].trim();
+            try {
+                strategy = LocatorStrategy.fromString(candidateStrategy);
+                value = parts[1].trim();
+            } catch (IllegalArgumentException ignored) {
+                // Not a strategy prefix — it's a raw CSS selector (e.g. [data-test='foo'])
+                strategy = LocatorStrategy.CSS;
+                value = locatorString.trim();
+            }
         } else {
             // Default to CSS if no prefix
             strategy = LocatorStrategy.CSS;

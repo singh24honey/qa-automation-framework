@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Comparator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -96,19 +97,15 @@ public class AgentController {
         UUID triggeredBy = userId != null ? UUID.fromString(userId) : null;
         String triggeredByName = userName != null ? userName : "system";
 
-        // Start agent asynchronously
-        CompletableFuture<AgentResult> future = orchestrator.startAgent(
+        // Create execution record synchronously, then launch agent async.
+        // This avoids the race condition of querying getRunningAgents() right after start.
+        AgentExecution execution = orchestrator.createAndStartAgent(
                 request.getAgentType(),
                 goal,
                 config,
                 triggeredBy,
                 triggeredByName
         );
-
-        // Get execution ID from database (created in orchestrator)
-        // For now, return immediately with execution info
-        List<AgentExecution> running = orchestrator.getRunningAgents();
-        AgentExecution execution = running.get(running.size() - 1); // Latest started
 
         AgentExecutionResponse response = mapToResponse(execution);
 
@@ -162,7 +159,7 @@ public class AgentController {
     }
 
     /**
-     * Get running agents.
+     * Get running agents, sorted by startedAt DESC (most recent first).
      *
      * GET /api/v1/agents/running
      */
@@ -171,6 +168,46 @@ public class AgentController {
         List<AgentExecution> executions = orchestrator.getRunningAgents();
 
         List<AgentExecutionResponse> responses = executions.stream()
+                .sorted(Comparator.comparing(
+                        AgentExecution::getStartedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(responses);
+    }
+
+    /**
+     * Get all agent execution history, sorted by startedAt DESC.
+     *
+     * GET /api/v1/agents/history?status=RUNNING&limit=50
+     */
+    @GetMapping("/history")
+    public ResponseEntity<List<AgentExecutionResponse>> getExecutionHistory(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "50") int limit) {
+
+        List<AgentExecution> executions;
+
+        if (status != null && !status.isBlank()) {
+            try {
+                com.company.qa.model.enums.AgentStatus agentStatus =
+                        com.company.qa.model.enums.AgentStatus.valueOf(status.toUpperCase());
+                executions = executionService.getExecutionsByStatus(agentStatus);
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().build();
+            }
+        } else {
+            executions = executionService.getAllExecutions(limit);
+        }
+
+        List<AgentExecutionResponse> responses = executions.stream()
+                .sorted(Comparator.comparing(
+                        AgentExecution::getStartedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .limit(limit)
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
 

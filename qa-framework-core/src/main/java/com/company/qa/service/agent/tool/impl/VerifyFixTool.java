@@ -108,6 +108,12 @@ public class VerifyFixTool implements AgentTool {
                 );*/
 
                 for (int i = 0; i < runCount; i++) {
+                    // Check cooperative stop flag and thread interrupt before each run.
+                    if (Thread.currentThread().isInterrupted()) {
+                        log.info("🛑 Stop requested — aborting verification loop at run {}/{}", i + 1, runCount);
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                     log.info("  Verification run {}/{} for: {}", i + 1, runCount, test.getName());
 
                     BrowserContext browserContext = browser.newContext();
@@ -141,13 +147,26 @@ public class VerifyFixTool implements AgentTool {
                         log.info("    Result: {}", allStepsPassed ? "✅ PASS" : "❌ FAIL");
 
                     } catch (Exception e) {
-                        log.error("    Test execution failed: {}", e.getMessage());
+                        String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                        log.error("    Test execution failed: {}", errMsg);
+
+                        if (errMsg.contains("TargetClosedError") || errMsg.contains("Target page, context or browser has been closed")
+                                || Thread.currentThread().isInterrupted()) {
+                            log.info("🛑 Browser closed due to stop request — aborting remaining verification runs");
+                            results.add(false);
+                            errorMessages.add(String.format("Run %d: aborted (stop requested)", i + 1));
+                            pattern.append("F");
+                            try { page.close(); } catch (Exception ignored) {}
+                            try { browserContext.close(); } catch (Exception ignored) {}
+                            break;
+                        }
+
                         results.add(false);
-                        errorMessages.add(String.format("Run %d: %s", i + 1, e.getMessage()));
+                        errorMessages.add(String.format("Run %d: %s", i + 1, errMsg));
                         pattern.append("F");
                     } finally {
-                        page.close();
-                        browserContext.close();
+                        try { page.close(); } catch (Exception ignored) {}
+                        try { browserContext.close(); } catch (Exception ignored) {}
                     }
                 }
 

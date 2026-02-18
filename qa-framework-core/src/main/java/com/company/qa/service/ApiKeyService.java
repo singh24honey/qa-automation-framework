@@ -87,12 +87,21 @@ public class ApiKeyService {
         log.info("Revoked API key: {}", id);
     }
 
+    /**
+     * Update lastUsedAt using a direct SQL UPDATE.
+     *
+     * The old findById → save pattern caused ObjectOptimisticLockingFailureException
+     * when concurrent requests (UI polling + agent API calls) all tried to update the
+     * same ApiKey row simultaneously — the @Version field rejected all but one.
+     *
+     * Fix: direct JPQL UPDATE skips the version check entirely. We also only update
+     * if the key hasn't been used in the last 30 seconds, eliminating redundant writes.
+     */
     @Transactional
     public void updateLastUsed(UUID apiKeyId) {
-        apiKeyRepository.findById(apiKeyId).ifPresent(apiKey -> {
-            apiKey.setLastUsedAt(Instant.now());
-            apiKeyRepository.save(apiKey);
-        });
+        Instant now = Instant.now();
+        Instant threshold = now.minusSeconds(30); // Only update if >30s since last use
+        apiKeyRepository.updateLastUsedAt(apiKeyId, now, threshold);
     }
 
     @Transactional(readOnly = true)

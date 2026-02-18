@@ -283,6 +283,13 @@ playwright:
   record-trace: true   # Capture traces
   timeout: 60000       # Longer timeout for debugging (60 sec)
 
+
+  page-objects:
+    scan-path: src/test/java
+    package-pattern: .*\.pages\..*
+
+  intent:
+    enabled: true
 # Sauce Demo Configuration
 saucedemo:
   base-url: https://www.saucedemo.com

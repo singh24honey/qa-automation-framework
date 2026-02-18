@@ -380,7 +380,7 @@ public class SelfHealingAgent extends BaseAgent {
             }*/
 
 
-        // Check if we have alternatives to try
+    // Check if we have alternatives to try
         /*if (availableAlternatives == null || availableAlternatives.isEmpty()) {
 
             boolean hasCapturedHtml = hasCompletedAction(context, AgentActionType.READ_FILE);
@@ -463,7 +463,7 @@ public class SelfHealingAgent extends BaseAgent {
         // All done for this test
         moveToNextTest(context);
         return plan(context);*/
-   // }
+    // }
 
     /**
      * ✅ NEW HELPER: Get the last action type from history.
@@ -516,7 +516,15 @@ public class SelfHealingAgent extends BaseAgent {
             boolean success = (boolean) result.getOrDefault("success", false);
 
             if (success) {
-                updateStateFromActionResult(actionType, result,context);
+                updateStateFromActionResult(actionType, result, context);
+            } else {
+                // For EXTRACT_BROKEN_LOCATOR specifically, update state even on failure
+                // so the planner can advance to AI discovery rather than looping forever.
+                // (The tool now always returns success=true, but this is a belt-and-suspenders guard.)
+                if (actionType == com.company.qa.model.enums.AgentActionType.EXTRACT_BROKEN_LOCATOR) {
+                    log.warn("⚠️ EXTRACT_BROKEN_LOCATOR returned success=false — updating state anyway to avoid infinite loop");
+                    updateStateFromActionResult(actionType, result, context);
+                }
             }
 
             return ActionResult.builder()

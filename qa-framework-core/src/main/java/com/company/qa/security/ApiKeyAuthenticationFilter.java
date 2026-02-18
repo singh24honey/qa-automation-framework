@@ -100,8 +100,15 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            // Update last used timestamp (async)
-            apiKeyService.updateLastUsed(apiKey.getId());
+            // Update last used timestamp — fire and forget.
+            // Using try/catch because a tracking update failure must never block the request.
+            try {
+                apiKeyService.updateLastUsed(apiKey.getId());
+            } catch (Exception updateEx) {
+                // Log at TRACE only — this is a non-critical tracking update
+                log.trace("Non-critical: failed to update API key lastUsedAt for {}: {}",
+                        apiKey.getId(), updateEx.getMessage());
+            }
 
             // Continue filter chain
             try {

@@ -150,3 +150,13 @@ playwright:
     scan-path: src/test/java
     package-pattern: .*\.pages\..*
 
+  intent:
+    enabled: false                  # Feature flag — false keeps old Java-in-JSON mode
+
+    # Java Renderer Configuration
+  renderer:
+    base-class: com.company.qa.playwright.BasePlaywrightTest
+    base-package: com.company.qa.playwright.generated
+    add-display-name: true          # Add @DisplayName to test methods
+    add-step-comments: true
+

@@ -188,6 +188,20 @@ public class GenerateFixTool implements AgentTool {
             4. If attempt #%d, try a DIFFERENT strategy than previous attempts
             5. Keep changes minimal - only fix what's needed
             
+            CRITICAL - SUPPORTED ACTIONS ONLY (use EXACTLY these names):
+            - navigate: {"action": "navigate", "value": "https://url"}
+            - type: {"action": "type", "locator": "css=[data-test='field']", "value": "text"}
+            - click: {"action": "click", "locator": "css=button#submit"}
+            - wait: {"action": "wait", "locator": "css=.element", "timeout": 5} OR {"action": "wait", "value": "3000"} for sleep
+            - waitForLoadState: {"action": "waitForLoadState"} waits for page load
+            - assertvisible: {"action": "assertvisible", "locator": "css=.element"}
+            - asserttext: {"action": "asserttext", "locator": "css=.el", "value": "expected"}
+            - select: {"action": "select", "locator": "css=select", "value": "option"}
+            - check / uncheck: for checkboxes
+            
+            DO NOT use: waitForPageLoad, waitForNetworkIdle, login, checkNotNull, or any other action names.
+            For locators, use CSS format: css=[data-test='x'], css=#id, css=.class, or role=button[name='Submit']
+            
             RESPONSE FORMAT (JSON only, no markdown):
             {
               "fixedTestCode": "...complete JSON with {"steps": [...]}...",
@@ -339,6 +353,52 @@ public class GenerateFixTool implements AgentTool {
             cleaned = cleaned.substring(0, cleaned.length() - 3);
         }
 
-        return objectMapper.readValue(cleaned.trim(), Map.class);
+        Map<String, Object> parsed = objectMapper.readValue(cleaned.trim(), Map.class);
+
+        // Normalize: AI sometimes returns fixedTestCode nested inside recommendedFixes
+        // Expected: {"fixedTestCode": "...", "fixStrategy": "...", "confidence": 0.85}
+        // Actual AI variants:
+        //   {"recommendedFixes": {"fixedTestCode": {...}}}
+        //   {"fixedTestCode": {...}}  (object instead of string)
+        if (!parsed.containsKey("fixedTestCode") && parsed.containsKey("recommendedFixes")) {
+            Object recommendedFixes = parsed.get("recommendedFixes");
+            if (recommendedFixes instanceof Map) {
+                Map<String, Object> fixes = (Map<String, Object>) recommendedFixes;
+                if (fixes.containsKey("fixedTestCode")) {
+                    parsed.put("fixedTestCode", fixes.get("fixedTestCode"));
+                }
+            }
+        }
+
+        // fixedTestCode must be a JSON string, not a Map/List.
+        // If the AI returned it as a nested object, serialize it back.
+        Object fixedTestCode = parsed.get("fixedTestCode");
+        if (fixedTestCode instanceof Map || fixedTestCode instanceof java.util.List) {
+            log.debug("fixedTestCode was a nested object — serializing to JSON string");
+            parsed.put("fixedTestCode", objectMapper.writeValueAsString(fixedTestCode));
+        } else if (fixedTestCode == null) {
+            // Last resort: if AI gave nothing useful, produce a sentinel that
+            // ApplyFixTool can reject cleanly rather than writing "null" to the DB.
+            log.warn("⚠️ AI returned no fixedTestCode — using empty steps sentinel");
+            parsed.put("fixedTestCode", "{\"steps\":[]}");
+        }
+
+        // Normalize fixStrategy — look in various places the AI might put it
+        if (!parsed.containsKey("fixStrategy") || parsed.get("fixStrategy") == null) {
+            if (parsed.containsKey("rootCauseAnalysis")) {
+                parsed.put("fixStrategy", parsed.get("rootCauseAnalysis"));
+            } else if (parsed.containsKey("explanation")) {
+                parsed.put("fixStrategy", parsed.get("explanation"));
+            } else {
+                parsed.put("fixStrategy", "AI-generated fix");
+            }
+        }
+
+        // Normalize confidence
+        if (!parsed.containsKey("confidence") || parsed.get("confidence") == null) {
+            parsed.put("confidence", 0.5);
+        }
+
+        return parsed;
     }
 }
