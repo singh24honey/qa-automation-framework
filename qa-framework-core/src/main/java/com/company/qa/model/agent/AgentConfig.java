@@ -46,6 +46,7 @@ public class AgentConfig {
             AgentActionType.CREATE_PULL_REQUEST,
             AgentActionType.DELETE_FILE,
             AgentActionType.MERGE_PR
+
     );
 
     /**

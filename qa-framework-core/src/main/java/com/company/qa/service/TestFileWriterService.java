@@ -155,11 +155,8 @@ public class TestFileWriterService {
             // This should point to the Playwright module's test directory
             folder = Paths.get(
                     committedFolderPath,
-                    "playwright-tests",
-                    "src",
-                    "test",
-                    "java",
-                    "generated",
+                    "src", "test", "java",
+                    "com", "company", "qa", "playwright", "generated",
                     test.getJiraStoryKey()
             );
         } else {

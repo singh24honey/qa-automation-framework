@@ -194,8 +194,8 @@ ai:
     # Output paths
     #draft-folder: /tmp/qa-framework/drafts
     #committed-folder: /tmp/qa-framework/tests/src/test
-    draft-folder: "${user.home}/qa-framework/tests/AiDraft"
-    committed-folder: "${user.home}/qa-framework/tests/committed"
+    draft-folder: AiDraft
+    committed-folder: ../playwright-tests
 
     # Quality thresholds
     quality:
@@ -368,4 +368,7 @@ uat:
     # Test execution settings
     auto-execute-approved: false
 
-
+qa:
+  framework:
+    registry:
+    path: ${user.home}/qa-framework/registry/element-registry-saucedemo.json

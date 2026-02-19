@@ -160,3 +160,13 @@ playwright:
     add-display-name: true          # Add @DisplayName to test methods
     add-step-comments: true
 
+ai:
+  test-generation:
+    draft-folder: "${user.home}/qa-framework/tests/AiDraft"
+    committed-folder: ../playwright-tests
+
+
+qa:
+  framework:
+    registry:
+    path: ${user.home}/qa-framework/registry/element-registry-saucedemo.json

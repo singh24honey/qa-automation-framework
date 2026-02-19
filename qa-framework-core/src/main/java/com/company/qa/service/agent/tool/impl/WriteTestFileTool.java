@@ -29,7 +29,6 @@ public class WriteTestFileTool implements AgentTool {
     private final AgentToolRegistry toolRegistry;
     private final DraftFileService draftFileService;
 
-    private static final String AI_DRAFT_DIR = "src/test/java/AiDraft/";
 
     @PostConstruct
     public void register() {

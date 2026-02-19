@@ -1,5 +1,6 @@
 package com.company.qa.service.playwright;
 
+import com.company.qa.config.PlaywrightProperties;
 import com.company.qa.model.playwright.ElementLocator;
 import com.company.qa.model.playwright.PageInfo;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -7,11 +8,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,6 +46,9 @@ public class ElementRegistryService {
     private String lastUpdated;
     private String defaultStrategy;
 
+
+    private final PlaywrightProperties playwrightProperties;
+
     @PostConstruct
     public void init() {
         loadRegistry();
@@ -50,7 +58,14 @@ public class ElementRegistryService {
      * Load element registry from JSON file.
      */
     public void loadRegistry() {
-        try {
+
+        Path path = Paths.get(playwrightProperties.getRegistryPath());
+        if (!Files.exists(path)) {
+            log.warn("Element registry not found at {}, using empty registry", path);
+            registry= new HashMap<>();
+            return;
+        }
+       /* try {
             log.info("Loading Element Registry...");
 
             ClassPathResource resource = new ClassPathResource("element-registry-saucedemo.json");
@@ -59,10 +74,10 @@ public class ElementRegistryService {
                 log.warn("element-registry.json not found, creating empty registry");
                 registry = new HashMap<>();
                 return;
-            }
+            }*/
 
-            try (InputStream is = resource.getInputStream()) {
-                JsonNode root = objectMapper.readTree(is);
+            try  {
+                JsonNode root = objectMapper.readTree(path.toFile());
 
                 version = root.path("version").asText("1.0");
                 lastUpdated = root.path("lastUpdated").asText();
@@ -70,20 +85,24 @@ public class ElementRegistryService {
 
                 JsonNode pagesNode = root.path("pages");
 
-                pagesNode.fields().forEachRemaining(entry -> {
-                    String pageName = entry.getKey();
-                    JsonNode pageNode = entry.getValue();
-
-                    PageInfo pageInfo = parsePage(pageName, pageNode);
-                    registry.put(pageName, pageInfo);
-                });
+                if (pagesNode.isArray()) {
+                    pagesNode.forEach(pageNode -> {
+                        String pageName = pageNode.path("name").asText();
+                        PageInfo pageInfo = parsePage(pageName, pageNode);
+                        registry.put(pageName, pageInfo);
+                    });
+                } else {
+                    // backward compat: old object format
+                    pagesNode.fields().forEachRemaining(entry -> {
+                        registry.put(entry.getKey(), parsePage(entry.getKey(), entry.getValue()));
+                    });
+                }
 
                 log.info("Element Registry loaded: {} pages, {} total elements",
                         registry.size(), getTotalElementCount());
 
-            }
 
-        } catch (IOException e) {
+    } catch (IOException e) {
             log.error("Failed to load Element Registry: {}", e.getMessage(), e);
             registry = new HashMap<>();
         }
@@ -96,16 +115,18 @@ public class ElementRegistryService {
         Map<String, ElementLocator> elements = new HashMap<>();
 
         JsonNode elementsNode = pageNode.path("elements");
-        elementsNode.fields().forEachRemaining(entry -> {
-            String elementName = entry.getKey();
-            JsonNode elementNode = entry.getValue();
-
-            ElementLocator locator = parseElement(pageName, elementName, elementNode);
-            locator.setPageUrl(pageNode.path("url").asText());
-            locator.setPageObjectClass(pageNode.path("pageObjectClass").asText(null));
-
-            elements.put(elementName, locator);
-        });
+        if (elementsNode.isArray()) {
+            elementsNode.forEach(elementNode -> {
+                String elementName = elementNode.path("name").asText();
+                ElementLocator locator = parseElement(pageName, elementName, elementNode);
+                elements.put(elementName, locator);
+            });
+        } else {
+            // backward compat
+            elementsNode.fields().forEachRemaining(entry -> {
+                elements.put(entry.getKey(), parseElement(pageName, entry.getKey(), entry.getValue()));
+            });
+        }
 
         return PageInfo.builder()
                 .pageName(pageName)

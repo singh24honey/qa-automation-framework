@@ -24,6 +24,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.company.qa.model.intent.TestIntent;
+import com.company.qa.service.playwright.FrameworkCapabilityService;
+import com.company.qa.service.playwright.PlaywrightJavaRenderer;
+import com.company.qa.service.playwright.TestIntentParser;
+import com.company.qa.service.playwright.TestIntentParser.ParseResult;
+import com.company.qa.service.playwright.ValidationResult;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -74,6 +81,19 @@ public class AITestGenerationService {
 
     private final JiraStoryService jiraStoryService;
     private final PlaywrightContextBuilder playwrightContextBuilder;
+
+    // ─── Zero-Hallucination Pipeline (Week 17+) ───────────────────────
+    private final TestIntentParser testIntentParser;
+    private final PlaywrightJavaRenderer playwrightJavaRenderer;
+    // FrameworkCapabilityService is already injected via PlaywrightContextBuilder;
+    // no need to inject it here again.
+
+    /**
+     * Feature flag — mirrors playwright.intent.enabled.
+     * Controls whether parseAIResponse() tries the intent pipeline first.
+     */
+    @Value("${playwright.intent.enabled:false}")
+    private boolean intentEnabled;
 
 
     @Value("${ai.test-generation.quality.minimum-score:60.0}")
@@ -543,6 +563,43 @@ public class AITestGenerationService {
             throw new TestGenerationException("Invalid JSON boundaries");
         }
     }
+
+    /**
+     * Sanitize AI response before JSON extraction.
+     * Handles cases where AI generates invalid constructs inside JSON string values:
+     * - "a".repeat(1000)  → replaced with a long literal string
+     * - "aaa..."          → ellipsis stripped to valid string
+     * - ...               → bare ellipsis removed
+     */
+    private String sanitizeAIResponse(String response) {
+        if (response == null) return null;
+
+        String sanitized = response;
+
+        // Fix: "value": "someStr".repeat(N)  → "value": "aaaaaa..."
+        sanitized = sanitized.replaceAll(
+                "\"([^\"]{0,50})\"\\.repeat\\(\\d+\\)",
+                "\"$1$1$1$1$1\""
+        );
+
+        // Fix: "value": "aaa..."  → "value": "aaa"   (ellipsis inside string)
+        sanitized = sanitized.replaceAll(
+                "(\"[^\"]*)\\.{2,}(\")",
+                "$1$2"
+        );
+
+        // Fix: bare ... outside quotes (e.g., between fields)
+        sanitized = sanitized.replaceAll(
+                "(?<!\")\\.\\.\\+(?!\")",
+                ""
+        );
+
+        if (!sanitized.equals(response)) {
+            log.info("Sanitized AI response: removed invalid constructs (ellipsis/repeat)");
+        }
+
+        return sanitized;
+    }
     // ═══════════════════════════════════════════════════════════════════
     // WEEK 12 DAY 3: ENHANCED JSON PARSING WITH FRAMEWORK SUPPORT
     // ═══════════════════════════════════════════════════════════════════
@@ -581,14 +638,57 @@ public class AITestGenerationService {
 
         log.debug("Parsing AI response for {} test with {} framework", testType, framework);
 
+        // PRE-SANITIZE: Remove invalid constructs AI generates for edge-case scenarios
+        // e.g., "a".repeat(1000), "aaa...", bare ellipsis between fields
+        aiResponse = sanitizeAIResponse(aiResponse);   // ← ADD THIS LINE
+
+        ObjectMapper mapper = new ObjectMapper();
+
+        // Two-pass extraction strategy:
+        // Pass 1: extractAndCleanJson (handles markdown blocks, basic truncation)
+        // Pass 2: extractJsonFromResponse (conservative — trims to last valid '}')
+        // This handles AI outputs with ellipsis, trailing comments, or mid-JSON invalid chars.
+        String[] extractionAttempts = new String[2];
         try {
-            String jsonContent = extractAndCleanJson(aiResponse);
-            //validateJsonStructure(jsonContent);
+            extractionAttempts[0] = extractAndCleanJson(aiResponse);
+        } catch (Exception e) {
+            log.debug("extractAndCleanJson failed: {}", e.getMessage());
+        }
+        try {
+            extractionAttempts[1] = extractJsonFromResponse(aiResponse);
+        } catch (Exception e) {
+            log.debug("extractJsonFromResponse failed: {}", e.getMessage());
+        }
 
-            ObjectMapper mapper = new ObjectMapper();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> testCode = mapper.readValue(jsonContent, Map.class);
+        Map<String, Object> testCode = null;
+        Exception lastParseException = null;
 
+        for (int pass = 0; pass < extractionAttempts.length; pass++) {
+            String candidate = extractionAttempts[pass];
+            if (candidate == null || candidate.isBlank()) continue;
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> parsed = mapper.readValue(candidate, Map.class);
+                testCode = parsed;
+                if (pass > 0) {
+                    log.info("JSON extracted successfully on pass {} (fallback extractor)", pass + 1);
+                }
+                break;
+            } catch (Exception e) {
+                lastParseException = e;
+                log.debug("JSON parse pass {} failed: {}", pass + 1, e.getMessage());
+            }
+        }
+
+        if (testCode == null) {
+            throw new TestGenerationException(
+                    "Failed to parse AI response for " + framework +
+                            " (likely truncated or invalid JSON)",
+                    lastParseException
+            );
+        }
+
+        try {
             // Framework-aware validation
             validateTestCodeStructure(testCode, testType, framework);
 
@@ -601,8 +701,7 @@ public class AITestGenerationService {
             throw e; // keep original message
         } catch (Exception e) {
             throw new TestGenerationException(
-                    "Failed to parse AI response for " + framework +
-                            " (likely truncated or invalid JSON)",
+                    "Failed to validate parsed AI response for " + framework,
                     e
             );
         }
@@ -752,8 +851,40 @@ public class AITestGenerationService {
      *   "newPagesNeeded": [...]     // Optional
      * }
      */
+    /**
+     * Validate Playwright JSON structure and — when intent mode is enabled —
+     * run the Zero-Hallucination pipeline: parse → validate → render.
+     *
+     * Two paths:
+     *
+     * PATH A (intent mode, response contains "scenarios" key):
+     *   TestIntentParser.parse() → ValidationResult → PlaywrightJavaRenderer.render()
+     *   On success: injects "renderedJava" + "format":"INTENT_V1" into testCode map.
+     *   On failure: throws TestGenerationException with validation errors.
+     *
+     * PATH B (legacy mode OR intent mode but response is legacy format):
+     *   Original validation: requires "testClassName" + "testClass" with Java code.
+     *   Falls through to existing behaviour without any change.
+     *
+     * The testCode map is mutated in-place for PATH A so that downstream code
+     * (createGeneratedTestEntity, assessQuality, fileWriterService) sees the
+     * rendered Java in the map without needing modification.
+     *
+     * @param testCode Mutable map from parseAIResponse()
+     * @since Zero-Hallucination Pipeline
+     */
     private void validatePlaywrightStructure(Map<String, Object> testCode) {
-        // Required fields
+
+        // ── PATH A: Intent format detected ──────────────────────────────
+        if (intentEnabled && testIntentParser.isIntentFormat(toJsonString(testCode))) {
+            log.info("Intent format detected — running Zero-Hallucination pipeline");
+            runIntentPipeline(testCode);
+            return;
+        }
+
+        // ── PATH B: Legacy format — original validation unchanged ────────
+        log.debug("Legacy Playwright format — using original validation");
+
         if (!testCode.containsKey("testClassName")) {
             throw new TestGenerationException(
                     "Missing 'testClassName' in Playwright test response");
@@ -764,28 +895,130 @@ public class AITestGenerationService {
                     "Missing 'testClass' in Playwright test response");
         }
 
-        // Validate testClass is not empty
         Object testClass = testCode.get("testClass");
         if (testClass == null || testClass.toString().trim().isEmpty()) {
             throw new TestGenerationException(
                     "Empty 'testClass' in Playwright test response");
         }
 
-        // Validate it contains Java code patterns
         String testClassCode = testClass.toString();
         if (!testClassCode.contains("class") || !testClassCode.contains("@Test")) {
             throw new TestGenerationException(
-                    "Invalid testClass - does not contain Java test class structure");
+                    "Invalid testClass — does not contain Java test class structure");
         }
 
-        // Warn if contains Cucumber/Gherkin syntax (AI confusion)
         if (testClassCode.contains("Feature:") || testClassCode.contains("Scenario:")) {
-            log.warn("⚠️  Playwright test contains Gherkin syntax - AI may be confused");
+            log.warn("⚠️  Playwright test contains Gherkin syntax — AI may be confused");
         }
 
-        log.debug("✅ Playwright structure validated: testClassName={}, testClass={} chars",
+        log.debug("✅ Legacy Playwright structure validated: testClassName={}, testClass={} chars",
                 testCode.get("testClassName"),
                 testClassCode.length());
+    }
+
+    /**
+     * Zero-Hallucination pipeline: parse JSON map → validate → render Java.
+     *
+     * Mutates the testCode map to inject pipeline results under "INTENT_V1" format.
+     * After this method returns the map contains:
+     *   - "format"              → "INTENT_V1"
+     *   - "testClassName"       → from TestIntent (already in map)
+     *   - "scenarios"           → from TestIntent (already in map)
+     *   - "testClass"           → rendered Java string (NEW — added by this method)
+     *   - "renderedJava"        → same rendered Java string (duplicate for clarity)
+     *   - "validationWarnings"  → List<String> of warnings (empty if none)
+     *
+     * The "testClass" key is injected specifically so that downstream code that
+     * reads testCode.get("testClass") (quality assessment, file writer) continues
+     * to work without modification.
+     *
+     * @param testCode Mutable map containing the AI's TestIntent JSON
+     * @throws TestGenerationException if parse or validation fails
+     * @since Zero-Hallucination Pipeline
+     */
+    private void runIntentPipeline(Map<String, Object> testCode) {
+        // Re-serialize the map to JSON so TestIntentParser can deserialize it cleanly
+        String intentJson = toJsonString(testCode);
+
+        // Step 1: Parse JSON → TestIntent (includes validation internally)
+        ParseResult parseResult = testIntentParser.parse(intentJson);
+
+        if (parseResult.isParseError()) {
+            throw new TestGenerationException(
+                    "Intent pipeline: JSON parse error — " + parseResult.getErrorMessage());
+        }
+
+        if (parseResult.isValidationFailure()) {
+            ValidationResult validation = parseResult.getValidation();
+            String errors = String.join("; ", validation.getErrors());
+            throw new TestGenerationException(
+                    "Intent pipeline: validation failed — " + errors);
+        }
+
+        if (!parseResult.isSuccess()) {
+            // NOT_INTENT should not reach here (isIntentFormat guard above)
+            throw new TestGenerationException(
+                    "Intent pipeline: unexpected parse status — " + parseResult.getSummary());
+        }
+
+        TestIntent intent = parseResult.getIntent();
+        log.info("Intent parsed: {} scenarios, {} total steps",
+                intent.getScenarioCount(), intent.getTotalStepCount());
+
+        // Step 2: Render TestIntent → Java source string
+        String renderedJava;
+        try {
+            renderedJava = playwrightJavaRenderer.render(intent);
+        } catch (Exception e) {
+            throw new TestGenerationException(
+                    "Intent pipeline: rendering failed — " + e.getMessage(), e);
+        }
+
+        log.info("Intent rendered: {} chars of Java for class {}",
+                renderedJava.length(), intent.getTestClassName());
+
+        // Step 3: Mutate testCode map — inject rendered Java + metadata
+        testCode.put("format", "INTENT_V1");
+        testCode.put("testClassName", intent.getTestClassName());
+
+        // "testClass" — the key all downstream code expects for the Java source
+        testCode.put("testClass", renderedJava);
+
+        // "renderedJava" — explicit alias so it's clear this was renderer-produced
+        testCode.put("renderedJava", renderedJava);
+
+        // Preserve validation warnings for storage (non-blocking)
+        ValidationResult validation = parseResult.getValidation();
+        if (validation != null && validation.hasWarnings()) {
+            testCode.put("validationWarnings", validation.getWarnings());
+            log.warn("Intent validation warnings for {}: {}",
+                    intent.getTestClassName(), validation.getWarnings());
+        } else {
+            testCode.put("validationWarnings", java.util.Collections.emptyList());
+        }
+
+        log.info("✅ Intent pipeline complete: INTENT_V1 envelope ready for {}",
+                intent.getTestClassName());
+    }
+
+    /**
+     * Re-serialize a Map back to a JSON string.
+     * Used to pass the already-parsed testCode map back to TestIntentParser,
+     * which expects a raw JSON string.
+     *
+     * Throws TestGenerationException (not IOException) so callers don't need
+     * checked exception handling.
+     */
+    private String toJsonString(Map<String, Object> map) {
+        try {
+            // ObjectMapper is already available as a field in this class
+            // (used in parseAIResponse). Use it directly.
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .writeValueAsString(map);
+        } catch (Exception e) {
+            throw new TestGenerationException(
+                    "Failed to re-serialize testCode map to JSON", e);
+        }
     }
 
     /**
@@ -922,8 +1155,10 @@ public class AITestGenerationService {
      * Assess quality using QualityAssessmentService (rule-based).
      */
     private void assessQuality(AIGeneratedTest generatedTest, Map<String, Object> testCode) {
-        log.debug("Assessing test quality for {}", generatedTest.getTestName());
-
+        boolean isIntentV1 = "INTENT_V1".equals(testCode.get("format"));
+        log.debug("Assessing test quality for {} (format: {})",
+                generatedTest.getTestName(),
+                isIntentV1 ? "INTENT_V1" : "LEGACY");
         // Use QualityAssessmentService instead of AIRecommendationService
         QualityAssessmentService.QualityAssessmentResult assessment =
                 qualityAssessmentService.assessTestQuality(testCode);

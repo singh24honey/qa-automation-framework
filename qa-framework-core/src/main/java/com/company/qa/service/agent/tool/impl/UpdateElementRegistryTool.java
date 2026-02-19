@@ -1,15 +1,18 @@
 package com.company.qa.service.agent.tool.impl;
 
+import com.company.qa.config.PlaywrightProperties;
 import com.company.qa.model.enums.AgentActionType;
 import com.company.qa.service.agent.tool.AgentTool;
 import com.company.qa.service.agent.tool.AgentToolRegistry;
 import com.company.qa.service.playwright.ElementRegistryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -57,6 +60,8 @@ public class UpdateElementRegistryTool implements AgentTool {
     private final ObjectMapper objectMapper;
     private final AgentToolRegistry toolRegistry;
     private final ElementRegistryService registryService;
+    private final PlaywrightProperties playwrightProperties;  // already a Spring bean
+
 
     @PostConstruct
     public void register() {
@@ -73,12 +78,15 @@ public class UpdateElementRegistryTool implements AgentTool {
         return "Element Registry Update Tool";
     }
 
+
+
     @Override
     public String getDescription() {
         return "Updates Element Registry with discovered working locators. " +
                 "Marks broken locators as deprecated and promotes working alternatives. " +
                 "Creates learning loop for future self-healing.";
     }
+
 
     @Override
     public Map<String, Object> execute(Map<String, Object> parameters) {
@@ -156,41 +164,40 @@ public class UpdateElementRegistryTool implements AgentTool {
      * Get path to registry file.
      */
     private Path getRegistryFilePath() throws Exception {
-        // Try to get from classpath
-        ClassPathResource resource = new ClassPathResource("element-registry-saucedemo.json");
 
-        if (resource.exists()) {
-            // In JAR, extract to temp location for editing
-            if (resource.getURL().toString().startsWith("jar:")) {
-                Path tempFile = Files.createTempFile("element-registry", ".json");
-                try (InputStream is = resource.getInputStream()) {
-                    Files.copy(is, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        Path path = Paths.get(playwrightProperties.getRegistryPath());
+       // Path path = Paths.get(registryFilePath);
+
+        // Ensure parent directory exists
+        Files.createDirectories(path.getParent());
+
+        // If the external file doesn't exist yet, seed it from classpath
+        if (!Files.exists(path)) {
+            ClassPathResource seed = new ClassPathResource("element-registry-saucedemo.json");
+            if (seed.exists()) {
+                try (InputStream is = seed.getInputStream()) {
+                    Files.copy(is, path);
                 }
-                return tempFile;
-            }
-
-            // In development, use file system path
-            return Paths.get(resource.getURI());
-        }
-
-        // If not found, create new file
-        Path registryPath = Paths.get("src/main/resources/playwright/element-registry-saucedemo.json");
-        if (!Files.exists(registryPath)) {
-            // Create empty registry
-            String emptyRegistry = """
+                log.info("📋 Seeded element registry from classpath to: {}", path);
+            } else {
+                // No classpath seed — create minimal empty registry
+                String empty = """
                 {
                   "version": "1.0",
+                  "application": "Sauce Demo",
+                  "baseUrl": "https://www.saucedemo.com",
                   "lastUpdated": "%s",
-                  "defaultStrategy": "role",
                   "pages": {}
                 }
                 """.formatted(Instant.now().toString());
-            Files.writeString(registryPath, emptyRegistry);
+                Files.writeString(path, empty);
+                log.info("📋 Created empty element registry at: {}", path);
+            }
         }
 
-        return registryPath;
+        return path;
     }
-
     /**
      * Load registry JSON.
      */
@@ -201,54 +208,160 @@ public class UpdateElementRegistryTool implements AgentTool {
 
     /**
      * Update registry JSON with new locator.
+     *
+     * Uses safe node resolution throughout — never casts .path() results directly,
+     * because the existing registry may have arrays or other unexpected node types
+     * at any level, causing ClassCastException at runtime.
      */
     private JsonNode updateRegistryJson(JsonNode root, String pageName, String elementName,
                                         String workingLocator, String brokenLocator,
                                         String strategy, String discoveredBy) {
 
-        ObjectNode mutableRoot = (ObjectNode) root;
-
-        // Update lastUpdated
+        ObjectNode mutableRoot = toObjectNode(root, "root");
         mutableRoot.put("lastUpdated", Instant.now().toString());
 
-        // Get or create pages node
-        ObjectNode pages = (ObjectNode) mutableRoot.path("pages");
-        if (pages.isMissingNode()) {
-            pages = objectMapper.createObjectNode();
-            mutableRoot.set("pages", pages);
+        // Pages is now an ARRAY — find target page by name or create it
+        JsonNode pagesRaw = mutableRoot.get("pages");
+        ArrayNode pagesArray;
+        if (pagesRaw instanceof ArrayNode an) {
+            pagesArray = an;
+        } else {
+            // Legacy object format or missing — create fresh array
+            pagesArray = objectMapper.createArrayNode();
+            mutableRoot.set("pages", pagesArray);
         }
 
-        // Get or create page node
-        ObjectNode page = (ObjectNode) pages.path(pageName);
-        if (page.isMissingNode()) {
-            page = objectMapper.createObjectNode();
-            page.put("url", "/" + pageName);
-            pages.set(pageName, page);
+        // Find existing page entry by name
+        ObjectNode targetPage = null;
+        for (JsonNode p : pagesArray) {
+            if (pageName.equals(p.path("name").asText())) {
+                targetPage = (ObjectNode) p;
+                break;
+            }
+        }
+        if (targetPage == null) {
+            targetPage = objectMapper.createObjectNode();
+            targetPage.put("name", pageName);
+            targetPage.put("url", "/" + pageName);
+            targetPage.set("elements", objectMapper.createArrayNode());
+            pagesArray.add(targetPage);
         }
 
-        // Get or create elements node
-        ObjectNode elements = (ObjectNode) page.path("elements");
-        if (elements.isMissingNode()) {
-            elements = objectMapper.createObjectNode();
-            page.set("elements", elements);
+        // Elements is an ARRAY inside the page
+        JsonNode elementsRaw = targetPage.get("elements");
+        ArrayNode elementsArray;
+        if (elementsRaw instanceof ArrayNode an) {
+            elementsArray = an;
+        } else {
+            elementsArray = objectMapper.createArrayNode();
+            targetPage.set("elements", elementsArray);
         }
 
-        // Create new element entry
+        // DEDUP CHECK — skip if we already have this exact working→broken mapping
+        for (JsonNode el : elementsArray) {
+            if (workingLocator.equals(el.path("primarySelector").asText())
+                    && brokenLocator != null
+                    && brokenLocator.equals(el.path("replacedLocator").asText())) {
+                log.info("⏭️  Skipping duplicate registry entry — already healed {} → {}",
+                        brokenLocator, workingLocator);
+                return mutableRoot;
+            }
+        }
+
+        // Build new element entry in unified format
         ObjectNode element = objectMapper.createObjectNode();
-        element.put("strategy", strategy);
-        element.put("value", extractLocatorValue(workingLocator));
-        element.put("playwrightCode", workingLocator);
+        element.put("name", deriveSemanticName(workingLocator, brokenLocator, strategy));
+        element.put("primarySelector", toStrategyValueFormat(workingLocator, strategy));
+        element.put("playwrightCode", toPlaywrightApiCall(workingLocator, strategy));
+        element.put("description", "AI-discovered replacement for: " + brokenLocator);
+        element.put("replacedLocator", brokenLocator != null ? brokenLocator : "");
         element.put("discoveredBy", discoveredBy);
         element.put("discoveredAt", Instant.now().toString());
 
-        // Add broken locator as deprecated alternative
-        if (brokenLocator != null) {
-            element.put("replacedLocator", brokenLocator);
+        // Keep broken locator as fallback — may heal in future UI reverts
+        ArrayNode fallbacks = objectMapper.createArrayNode();
+        if (brokenLocator != null && !brokenLocator.isBlank()) {
+            fallbacks.add(toPlaywrightApiCall(brokenLocator, strategy));
         }
+        element.set("fallbacks", fallbacks);
 
-        elements.set(elementName, element);
+        elementsArray.add(element);
 
         return mutableRoot;
+    }
+
+// NEW helpers needed alongside this method:
+
+    private String toStrategyValueFormat(String locator, String strategy) {
+        String val = extractLocatorValue(locator);
+        return switch (strategy.toLowerCase()) {
+            case "testid" -> "testid=" + val;
+            case "role"   -> "role=" + val;
+            case "label"  -> "label=" + val;
+            case "text"   -> "text=" + val;
+            case "css"    -> locator.startsWith("css=") ? locator : "css=" + locator;
+            case "xpath"  -> locator.startsWith("xpath=") ? locator : "xpath=" + locator;
+            default       -> "css=" + locator;
+        };
+    }
+
+    private String toPlaywrightApiCall(String locator, String strategy) {
+        return switch (strategy.toLowerCase()) {
+            case "testid" -> "page.getByTestId(\"" + extractLocatorValue(locator) + "\")";
+            case "role"   -> "page.getByRole(AriaRole." + extractLocatorValue(locator).toUpperCase() + ")";
+            case "label"  -> "page.getByLabel(\"" + extractLocatorValue(locator) + "\")";
+            case "text"   -> "page.getByText(\"" + extractLocatorValue(locator) + "\")";
+            case "css"    -> "page.locator(\"" + locator + "\")";
+            case "xpath"  -> "page.locator(\"" + locator + "\")";
+            default       -> "page.locator(\"" + locator + "\")";
+        };
+    }
+
+    private String deriveSemanticName(String workingLocator, String brokenLocator, String strategy) {
+        String val = extractLocatorValue(workingLocator)
+                .replaceAll("[^a-zA-Z0-9]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "");
+        return val + "_healed";
+    }
+
+    /**
+     * Safely coerce a JsonNode to ObjectNode.
+     *
+     * If the node is already an ObjectNode, returns it as-is.
+     * If it is missing, null, or any other type (e.g. ArrayNode), returns a
+     * fresh empty ObjectNode — the caller is responsible for re-attaching it.
+     */
+    private ObjectNode toObjectNode(JsonNode node, String label) {
+        if (node instanceof ObjectNode on) {
+            return on;
+        }
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            log.debug("Registry node '{}' is missing/null — creating empty ObjectNode", label);
+        } else {
+            log.warn("Registry node '{}' is {} not ObjectNode — replacing with empty ObjectNode",
+                    label, node.getNodeType());
+        }
+        return objectMapper.createObjectNode();
+    }
+
+    /**
+     * Get the child ObjectNode at {@code fieldName} inside {@code parent},
+     * creating and attaching a fresh one if absent or of the wrong type.
+     */
+    private ObjectNode getOrCreateObjectNode(ObjectNode parent, String fieldName) {
+        JsonNode existing = parent.get(fieldName);
+        if (existing instanceof ObjectNode on) {
+            return on;
+        }
+        // Missing, null, or wrong type (e.g. ArrayNode) — replace with object
+        if (existing != null && !existing.isMissingNode() && !existing.isNull()) {
+            log.warn("Registry field '{}' was {} — replacing with ObjectNode",
+                    fieldName, existing.getNodeType());
+        }
+        ObjectNode fresh = objectMapper.createObjectNode();
+        parent.set(fieldName, fresh);
+        return fresh;
     }
 
     /**

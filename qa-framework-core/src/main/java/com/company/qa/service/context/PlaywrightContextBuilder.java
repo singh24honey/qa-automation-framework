@@ -9,7 +9,8 @@ import com.company.qa.service.playwright.PageObjectRegistryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
+import com.company.qa.service.playwright.FrameworkCapabilityService;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -63,6 +64,17 @@ public class PlaywrightContextBuilder {
     private final JiraContextBuilder jiraContextBuilder;
     private final ElementRegistryService elementRegistryService;
     private final PageObjectRegistryService pageObjectRegistryService;
+
+    private final FrameworkCapabilityService frameworkCapabilityService;
+
+    /**
+     * Feature flag for Zero-Hallucination intent mode.
+     * When true, output format and instruction sections switch from
+     * "generate Java code" to "generate TestIntent JSON".
+     * Controlled by playwright.intent.enabled in application.yml.
+     */
+    @Value("${playwright.intent.enabled:false}")
+    private boolean intentEnabled;
 
     // ═══════════════════════════════════════════════════════════════════
     // MAIN CONTEXT BUILDING METHODS
@@ -148,8 +160,13 @@ public class PlaywrightContextBuilder {
                 ? acParser.parse(story.getAcceptanceCriteria()).getFormat()
                 : ParsedAcceptanceCriteria.ACFormat.EMPTY;
 
-        prompt.append(buildPlaywrightTestInstructions(testType, acFormat));
-
+        if (intentEnabled) {
+            prompt.append(buildIntentTestInstructions(testType, acFormat));
+            prompt.append(frameworkCapabilityService.getCapabilitiesForPrompt());
+            prompt.append("\n\n");
+        } else {
+            prompt.append(buildPlaywrightTestInstructions(testType, acFormat));
+        }
         // ───────────────────────────────────────────────────────────────
         // 8. Locator Strategy Guidance (CRITICAL for 70-80% usability)
         // ───────────────────────────────────────────────────────────────
@@ -163,14 +180,73 @@ public class PlaywrightContextBuilder {
         // ───────────────────────────────────────────────────────────────
         // 10. Output Format Instructions
         // ───────────────────────────────────────────────────────────────
-        prompt.append(buildOutputFormatInstructions());
+        if (intentEnabled) {
+            prompt.append(buildIntentOutputFormatInstructions(story.getJiraKey()));
 
+        } else {
+            prompt.append(buildOutputFormatInstructions());
+        }
         String result = prompt.toString();
         log.debug("Built Playwright prompt: {} characters, {} sections",
                 result.length(),
                 countSections(result));
 
         return result;
+    }
+
+    /**
+     * Intent-mode test generation instructions.
+     *
+     * Replaces buildPlaywrightTestInstructions() when playwright.intent.enabled=true.
+     * Instead of "generate Java code", the AI is instructed to generate TestIntent JSON
+     * with structured action/locator/value fields.
+     *
+     * The DO/DON'T list mirrors the legacy method but swaps all code-generation
+     * instructions for schema-adherence instructions.
+     *
+     * @since Zero-Hallucination Pipeline
+     */
+    private String buildIntentTestInstructions(
+            AIGeneratedTest.TestType testType,
+            ParsedAcceptanceCriteria.ACFormat acFormat) {
+
+        StringBuilder instructions = new StringBuilder();
+
+        instructions.append("=== Zero-Hallucination Test Generation Instructions ===\n");
+        instructions.append("Generate a ").append(testType)
+                .append(" test as a TestIntent JSON object (NOT Java code) that:\n\n");
+
+        instructions.append("✅ MUST DO:\n");
+        instructions.append("1. Cover all acceptance criteria scenarios — one scenario per criterion\n");
+        instructions.append("2. Use selector-only locators in the 'locator' field:\n");
+        instructions.append("   testid=username    role=button[name='Login']    label=Email\n");
+        instructions.append("3. Use ONLY action types from the Supported Actions list below\n");
+        instructions.append("4. Include at least one ASSERT_* step in every scenario\n");
+        instructions.append("6. Set scenario 'name' to a valid Java method name (camelCase, no spaces)\n");
+        instructions.append("7. Use 'description' fields for human-readable step explanations\n");
+        instructions.append("8. Include both positive and negative test scenarios\n\n");
+       // instructions.append("5. Set testClassName to exactly: " + generateClassName(jiraKey) + " (derived from JIRA key)\n");
+
+        instructions.append("❌ DO NOT:\n");
+        instructions.append("1. Write any Java code — the renderer handles all code generation\n");
+        instructions.append("2. Use 'page.locator()', 'page.getByRole()' — use selector format instead\n");
+        instructions.append("3. Use Thread.sleep() or any explicit wait — use WAIT_FOR_* actions\n");
+        instructions.append("4. Write Gherkin/Cucumber syntax — use TestIntent JSON structure\n");
+        instructions.append("5. Invent action type names not in the Supported Actions list\n");
+        instructions.append("6. Include package or import statements — renderer adds all of that\n");
+        instructions.append("7. Add Playwright.create() or browser lifecycle code\n\n");
+
+        if (acFormat == ParsedAcceptanceCriteria.ACFormat.GHERKIN) {
+            instructions.append("📝 Note: Acceptance criteria are in Gherkin format.\n");
+            instructions.append("   Convert each Scenario to one TestScenario with steps.\n");
+            instructions.append("   Map Given→NAVIGATE/FILL, When→CLICK, Then→ASSERT_*\n\n");
+        } else if (acFormat == ParsedAcceptanceCriteria.ACFormat.EMPTY) {
+            instructions.append("📝 Note: No explicit acceptance criteria.\n");
+            instructions.append("   Infer scenarios from summary and description.\n");
+            instructions.append("   Create at least one positive and one negative scenario.\n\n");
+        }
+
+        return instructions.toString();
     }
 
     /**
@@ -219,12 +295,25 @@ public class PlaywrightContextBuilder {
            context.append(pageObjectContext);
            context.append("\n");
        }
-        // 5. Playwright Best Practices
-        context.append(getPlaywrightGuidance());
-        context.append("\n\n");
+        // 5a. Framework Capabilities (intent mode only — tells AI the exact JSON schema)
+        if (intentEnabled) {
+            context.append("=== Zero-Hallucination Pipeline: Framework Constraints ===\n");
+            context.append(frameworkCapabilityService.getCapabilitiesForPrompt());
+            context.append("\n\n");
+        }
 
-        // 6. Output Format Instructions
-        context.append(getOutputFormatInstructions());
+        // 5b. Playwright Best Practices (legacy mode only — intent mode uses capabilities above)
+        if (!intentEnabled) {
+            context.append(getPlaywrightGuidance());
+            context.append("\n\n");
+        }
+
+        // 6. Output Format Instructions — switches based on intent mode flag
+        if (intentEnabled) {
+            context.append(getIntentOutputFormatInstructions(story.getJiraKey()));
+        } else {
+            context.append(getOutputFormatInstructions());
+        }
 
         log.debug("Built context: {} characters", context.length());
         return context.toString();
@@ -789,6 +878,102 @@ CRITICAL:
         format.append("    This is a Playwright (Java) test, not a Cucumber test.\n\n");
 
         return format.toString();
+    }
+
+    /**
+     * Intent-mode output format instructions.
+     *
+     * Replaces buildOutputFormatInstructions() when playwright.intent.enabled=true.
+     * Instructs the AI to return a TestIntent JSON object instead of a testClass Java string.
+     *
+     * The schema shown here is the exact contract that TestIntentParser expects.
+     * Any field the AI returns that is not in this schema is silently ignored
+     * (JsonIgnoreProperties on the model classes).
+     *
+     * @since Zero-Hallucination Pipeline
+     */
+    private String buildIntentOutputFormatInstructions(String jiraKey) {
+        String exampleClassName = generateClassName(jiraKey);
+        return "=== Required Output Format (TestIntent JSON) ===\n\n"
+                + "Return ONLY a valid JSON object with this EXACT structure (no markdown, no code blocks):\n\n"
+                + "{\n"
+                + "  \"testClassName\": \"" + exampleClassName + "\",\n"
+                + "  \"baseUrl\": \"https://www.saucedemo.com\",\n"
+                + "  \"scenarios\": [\n"
+                + "    {\n"
+                + "      \"name\": \"testSuccessfulLogin\",\n"
+                + "      \"description\": \"Standard user logs in and sees the products page\",\n"
+                + "      \"tags\": [\"smoke\", \"login\"],\n"
+                + "      \"steps\": [\n"
+                + "        {\"action\": \"NAVIGATE\", \"value\": \"https://www.saucedemo.com\", \"description\": \"Open Sauce Demo login page\"},\n"
+                + "        {\"action\": \"FILL\", \"locator\": \"testid=username\", \"value\": \"standard_user\", \"description\": \"Enter username\"},\n"
+                + "        {\"action\": \"FILL\", \"locator\": \"testid=password\", \"value\": \"secret_sauce\", \"description\": \"Enter password\"},\n"
+                + "        {\"action\": \"CLICK\", \"locator\": \"testid=login-button\", \"description\": \"Click login button\"},\n"
+                + "        {\"action\": \"ASSERT_URL\", \"value\": \".*inventory.*\", \"description\": \"Verify redirect to products page\"},\n"
+                + "        {\"action\": \"ASSERT_VISIBLE\", \"locator\": \"css=.inventory_list\", \"description\": \"Verify product list is displayed\"}\n"
+                + "      ]\n"
+                + "    },\n"
+                + "    {\n"
+                + "      \"name\": \"testInvalidCredentialsShowsError\",\n"
+                + "      \"description\": \"Invalid login shows error message\",\n"
+                + "      \"steps\": [\n"
+                + "        {\"action\": \"NAVIGATE\", \"value\": \"https://www.saucedemo.com\"},\n"
+                + "        {\"action\": \"FILL\", \"locator\": \"testid=username\", \"value\": \"invalid_user\"},\n"
+                + "        {\"action\": \"FILL\", \"locator\": \"testid=password\", \"value\": \"wrong_password\"},\n"
+                + "        {\"action\": \"CLICK\", \"locator\": \"testid=login-button\"},\n"
+                + "        {\"action\": \"ASSERT_VISIBLE\", \"locator\": \"css=.error-message-container\", \"description\": \"Verify error message appears\"},\n"
+                + "        {\"action\": \"ASSERT_TEXT\", \"locator\": \"css=.error-message-container\", \"value\": \"Epic sadface\", \"description\": \"Verify error message text\"}\n"
+                + "      ]\n"
+                + "    }\n"
+                + "  ]\n"
+                + "}\n\n"
+                + "Field Rules:\n"
+                + "- testClassName: Valid Java identifier ending with \"Test\" — use exactly: " + exampleClassName + "\n"
+                + "- baseUrl: Optional. Application base URL for context only.\n"
+                + "- scenarios: Array of test scenarios. At least one required.\n"
+                + "- scenario.name: camelCase Java method name (e.g., \"testSuccessfulLogin\"). No spaces.\n"
+                + "- scenario.description: Human-readable test description. Shown as @DisplayName.\n"
+                + "- scenario.tags: Optional string array for test grouping.\n"
+                + "- step.action: Must be one of the Supported Actions listed above. EXACT name required.\n"
+                + "- step.locator: Selector in strategy=value format. Required only for locator-based actions.\n"
+                + "- step.value: URL, text, key name, or expected value. Required for value-based actions.\n"
+                + "- step.description: Optional human-readable comment rendered above the Java statement.\n"
+                + "- step.timeout: Optional integer milliseconds for explicit element wait before action.\n\n"
+                + "Locator Format Examples (strategy=value):\n"
+                + "  testid=username                   → page.getByTestId(\"username\")\n"
+                + "  role=button[name='Login']         → page.getByRole(AriaRole.BUTTON, ...).setName(\"Login\")\n"
+                + "  label=Email Address               → page.getByLabel(\"Email Address\")\n"
+                + "  text=Products                     → page.getByText(\"Products\")\n"
+                + "  css=[data-test=\"login-button\"]    → page.locator(\"[data-test=\\\"login-button\\\"]\")\n"
+                + "  #user-name                        → page.locator(\"#user-name\")\n"
+                + "  xpath=//button[@id='submit']      → page.locator(\"xpath=//button[@id='submit']\")\n\n"
+                + "CRITICAL:\n"
+                + "- Return ONLY the JSON object — no ```json markers, no explanatory text\n"
+                + "- Every scenario MUST have at least one ASSERT_* step\n"
+                + "- Do NOT include any Java code in any field\n"
+                + "- For 'very long input' scenarios use a fixed long string literal (e.g., 100 'a' chars), never .repeat() or ellipsis\n"
+                + "- Use EXACT action type names from the Supported Actions list\n";
+    }
+
+    private String generateClassName(String jiraKey) {
+        String[] parts = jiraKey.split("-");
+        StringBuilder className = new StringBuilder();
+        for (String part : parts) {
+            className.append(part.substring(0, 1).toUpperCase())
+                    .append(part.substring(1).toLowerCase());
+        }
+        className.append("Test");
+        return className.toString(); // "SCRUM-16" → "Scrum16Test"
+    }
+
+    /**
+     * Legacy output format instructions (used when playwright.intent.enabled=false).
+     * Retained unchanged from original implementation.
+     * Asks AI for {"testClass": "<Java code>"} format.
+     */
+    private String getIntentOutputFormatInstructions(String jiraKey) {
+        // Delegates to intent-specific method to keep naming consistent
+        return buildIntentOutputFormatInstructions(jiraKey);
     }
 
     // ═══════════════════════════════════════════════════════════════════

@@ -87,12 +87,10 @@ public class ApplyFixTool implements AgentTool {
             log.debug("Previous content length: {} chars", previousContent.length());
 
             // Validate new content is valid JSON
-            try {
-                objectMapper.readValue(fixedTestCode, Map.class);
-            } catch (Exception e) {
+            if (fixedTestCode == null || fixedTestCode.isBlank()) {
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", false);
-                result.put("error", "Invalid JSON in fixedTestCode: " + e.getMessage());
+                result.put("error", "fixedTestCode is null or blank");
                 return result;
             }
 

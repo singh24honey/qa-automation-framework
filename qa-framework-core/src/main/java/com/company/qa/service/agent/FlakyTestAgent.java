@@ -50,15 +50,6 @@ public class FlakyTestAgent extends BaseAgent {
     private final AgentOrchestrator orchestrator;
 
     // Agent state (per execution)
-    private List<UUID> testsToAnalyze;
-    private int currentTestIndex;
-    private Map<String, Object> currentTestAnalysis;
-
-    // Day 2: Fix attempt tracking
-    private int fixAttemptCount;
-    private String originalTestContent;
-    private String lastAppliedFix;
-    private boolean fixVerified;
 
     public FlakyTestAgent(
             AIGatewayService aiGateway,
@@ -90,31 +81,31 @@ public class FlakyTestAgent extends BaseAgent {
         return AgentType.FLAKY_TEST_FIXER;
     }
 
+
     @Override
     protected AgentPlan plan(AgentContext context) {
-        log.info("📋 Planning next action - Test {}/{}, Fix attempt {}/{}",
-                currentTestIndex,
-                testsToAnalyze != null ? testsToAnalyze.size() : 0,
-                fixAttemptCount,
-                config.getMaxFixAttempts());
-
-        // Initialize state on first call
-        if (testsToAnalyze == null) {
+        // Initialize on first call
+        if (getTestIds(context).isEmpty() && context.getCurrentIteration() == 0) {
             initializeAgentState(context);
         }
+
+        List<String> testIds = getTestIds(context);
+        int currentTestIndex = getTestIndex(context);
+
+        log.info("📋 Planning - Test {}/{}, Fix attempt {}/{}",
+                currentTestIndex, testIds.size(),
+                getFixAttemptCount(context), config.getMaxFixAttempts());
 
         AgentActionType lastAction = getLastActionType(context);
         if (lastAction != AgentActionType.REQUEST_APPROVAL) {
             int consecutiveFailures = countConsecutiveFailures(context, lastAction);
-
             if (consecutiveFailures >= 3) {
                 log.error("❌ Action {} failed {} times consecutively - aborting",
                         lastAction, consecutiveFailures);
-
                 return AgentPlan.builder()
                         .nextAction(AgentActionType.REQUEST_APPROVAL)
                         .actionParameters(Map.of(
-                                "testName", " [FAILED - NEEDS MANUAL FIX]",
+                                "testName", "[FAILED - NEEDS MANUAL FIX]",
                                 "requestedBy", "FlakyTestAgent",
                                 "reason", "Action " + lastAction + " failed " + consecutiveFailures + " times"
                         ))
@@ -124,107 +115,64 @@ public class FlakyTestAgent extends BaseAgent {
                         .build();
             }
         }
-        // Check if we've processed all tests
-        if (currentTestIndex >= testsToAnalyze.size()) {
+
+        if (currentTestIndex >= testIds.size()) {
             return planComplete(context);
         }
 
-        // Get current test
-        UUID testId = testsToAnalyze.get(currentTestIndex);
+        UUID testId = UUID.fromString(testIds.get(currentTestIndex));
         Test test = testRepository.findById(testId).orElseThrow();
 
-        // Check what's been done for current test
-        boolean hasAnalyzedStability = hasCompletedAction(context, AgentActionType.ANALYZE_TEST_STABILITY);
-        boolean hasAnalyzedFailure = hasCompletedAction(context, AgentActionType.ANALYZE_FAILURE);
-        boolean hasRecordedPattern = hasCompletedAction(context, AgentActionType.WRITE_FILE);
+        // AFTER — analysis actions use full-test window, fix actions use fix-attempt window
+        boolean hasAnalyzedStability = hasCompletedAction(context, AgentActionType.ANALYZE_TEST_STABILITY, "test");
+        boolean hasAnalyzedFailure   = hasCompletedAction(context, AgentActionType.ANALYZE_FAILURE,        "test");
+        boolean hasRecordedPattern   = hasCompletedAction(context, AgentActionType.WRITE_FILE,             "test");
+        boolean hasGeneratedFix      = hasCompletedAction(context, AgentActionType.SUGGEST_FIX,            "fix");
+        boolean hasAppliedFix        = hasCompletedAction(context, AgentActionType.MODIFY_FILE,            "fix");
+        boolean hasVerifiedFix       = hasCompletedAction(context, AgentActionType.EXECUTE_TEST,           "fix");
+        boolean hasCreatedBranch     = hasCompletedAction(context, AgentActionType.CREATE_BRANCH,             "test");
+        boolean hasCommitted         = hasCompletedAction(context, AgentActionType.COMMIT_CHANGES,             "test");
+        boolean hasCreatedApproval   = hasCompletedAction(context, AgentActionType.REQUEST_APPROVAL,             "test");
+        boolean hasCreatedPR         = hasCompletedAction(context, AgentActionType.CREATE_PULL_REQUEST,             "test");
 
-        // Day 2: Fix actions
-        boolean hasGeneratedFix = hasCompletedAction(context, AgentActionType.SUGGEST_FIX);
-        boolean hasAppliedFix = hasCompletedAction(context, AgentActionType.MODIFY_FILE);
-        boolean hasVerifiedFix = hasCompletedAction(context, AgentActionType.EXECUTE_TEST);
+        // DAY 1
+        if (!hasAnalyzedStability) return planAnalyzeStability(context, test);
+        if (!hasAnalyzedFailure)   return planAnalyzeFailure(context, test);
+        if (!hasRecordedPattern)   return planRecordPattern(context, test);
 
-        // Git workflow actions
-        boolean hasCreatedBranch = hasCompletedAction(context, AgentActionType.CREATE_BRANCH);
-        boolean hasCommitted = hasCompletedAction(context, AgentActionType.COMMIT_CHANGES);
-        boolean hasCreatedApproval = hasCompletedAction(context, AgentActionType.REQUEST_APPROVAL);
-        boolean hasCreatedPR = hasCompletedAction(context, AgentActionType.CREATE_PULL_REQUEST);
-
-        // ========== DAY 1: DETECTION & ANALYSIS ==========
-
-        if (!hasAnalyzedStability) {
-            return planAnalyzeStability(test);
-        }
-
-        if (!hasAnalyzedFailure) {
-            return planAnalyzeFailure(context, test);
-        }
-
-        if (!hasRecordedPattern) {
-            return planRecordPattern(context,test);
-        }
-
-        // ========== DAY 2: FIX GENERATION & VERIFICATION ==========
-
-        // Check if we should attempt a fix
+        // DAY 2
+        int fixAttemptCount = getFixAttemptCount(context);
         if (fixAttemptCount < config.getMaxFixAttempts()) {
+            if (!hasGeneratedFix) return planGenerateFix(context, test);
+            if (!hasAppliedFix)   return planApplyFix(context, test);
+            if (!hasVerifiedFix)  return planVerifyFix(context, test);
 
-            if (!hasGeneratedFix) {
-                return planGenerateFix(context, test);
-            }
-
-            if (!hasAppliedFix) {
-                return planApplyFix(context, test);
-            }
-
-            if (!hasVerifiedFix) {
-                return planVerifyFix(context, test);
-            }
-
-            // If we reach here, verification is complete
-            // Check if fix was successful
-            if (fixVerified) {
+            if (isFixVerified(context)) {
                 log.info("✅ Fix verified! Proceeding to Git workflow");
-                // Fall through to Git workflow
             } else {
-                // Fix didn't work, try next attempt
                 log.warn("❌ Fix attempt {} failed, trying next fix", fixAttemptCount);
                 fixAttemptCount++;
-                context.putState("currentTestStartIteration", context.getCurrentIteration());
-                return plan(context); // Recursive call to try next fix
+                setFixAttemptCount(context, fixAttemptCount);
+                // Advance the fix-phase window — NOT the full test window
+                // so hasAnalyzedStability/Failure/RecordedPattern remain true
+                context.putState("fixPhaseStartIteration", context.getCurrentIteration());
+                return plan(context);
             }
         } else {
-            // All fix attempts exhausted
-            if (!hasCreatedApproval) {
-                return planCreateApprovalForManualReview(context, test);
-            }
-            // After creating approval, move to next test
+            if (!hasCreatedApproval) return planCreateApprovalForManualReview(context, test);
             moveToNextTest(context);
             return plan(context);
         }
 
-        // ========== GIT WORKFLOW (after successful fix) ==========
+        // GIT WORKFLOW
+        if (!hasCreatedBranch)   return planCreateBranch(context, test);
+        if (!hasCommitted)       return planCommitChanges(context, test);
+        if (!hasCreatedApproval) return planCreateApproval(context, test);
+        if (!hasCreatedPR)       return planCreatePullRequest(context, test);
 
-        if (!hasCreatedBranch) {
-            return planCreateBranch(context, test);
-        }
-
-        if (!hasCommitted) {
-            return planCommitChanges(context, test);
-        }
-
-        if (!hasCreatedApproval) {
-            return planCreateApproval(context, test);
-        }
-
-        if (!hasCreatedPR) {
-            return planCreatePullRequest(context, test);
-        }
-
-        // All done for this test, move to next
         moveToNextTest(context);
         return plan(context);
     }
-
 
     /**
      * ✅ NEW HELPER: Count consecutive failures of same action
@@ -291,7 +239,7 @@ public class FlakyTestAgent extends BaseAgent {
 
             // Update state based on action results
             if (success) {
-                updateStateFromActionResult(actionType, result);
+                updateStateFromActionResult(actionType, result, context);
                 if (actionType == AgentActionType.CREATE_BRANCH) {
                     String branchName = (String) result.get("branchName");
                     if (branchName != null) {
@@ -328,53 +276,46 @@ public class FlakyTestAgent extends BaseAgent {
 
     @Override
     protected boolean isGoalAchieved(AgentContext context) {
-        boolean allAnalyzed = testsToAnalyze != null && currentTestIndex >= testsToAnalyze.size();
-
-        if (allAnalyzed) {
-            log.info("✅ Goal achieved: All {} tests processed", testsToAnalyze.size());
+        List<String> ids = getTestIds(context);
+        boolean allProcessed = !ids.isEmpty() && getTestIndex(context) >= ids.size();
+        if (allProcessed) {
+            log.info("✅ Goal achieved: All {} tests processed", ids.size());
         }
-
-        return allAnalyzed;
+        return allProcessed;
     }
-
-    // ========== INITIALIZATION ==========
 
     private void initializeAgentState(AgentContext context) {
         log.info("🔧 Initializing FlakyTestAgent state");
 
-        testsToAnalyze = new ArrayList<>();
-        currentTestIndex = 0;
-        currentTestAnalysis = new HashMap<>();
-        fixAttemptCount = 0;
-        originalTestContent = null;
-        lastAppliedFix = null;
-        fixVerified = false;
-
-        // Check if specific test ID provided
         Map<String, Object> goalParams = context.getGoal().getParameters();
+        List<String> testIds = new ArrayList<>();
 
         if (goalParams.containsKey("testId")) {
-            String testIdStr = (String) goalParams.get("testId");
-            testsToAnalyze.add(UUID.fromString(testIdStr));
-            log.info("Analyzing specific test: {}", testIdStr);
+            testIds.add((String) goalParams.get("testId"));
+            log.info("Analyzing specific test: {}", goalParams.get("testId"));
         } else {
-            // Add all active tests
-            List<Test> allTests = testRepository.findAll();
-            for (Test test : allTests) {
-                if (Boolean.TRUE.equals(test.getIsActive())) {
-                    testsToAnalyze.add(test.getId());
-                }
-            }
-            log.info("Added {} active tests for analysis", testsToAnalyze.size());
+            testRepository.findAll().stream()
+                    .filter(t -> Boolean.TRUE.equals(t.getIsActive()))
+                    .forEach(t -> testIds.add(t.getId().toString()));
+            log.info("Added {} active tests for analysis", testIds.size());
         }
+
+        context.putState(State.TESTS_TO_ANALYZE,      testIds);
+        context.putState(State.CURRENT_TEST_INDEX,     0);
+        context.putState(State.CURRENT_TEST_ANALYSIS,  new HashMap<>());
+        context.putState(State.FIX_ATTEMPT_COUNT,      0);
+        context.putState(State.ORIGINAL_CONTENT,       null);
+        context.putState(State.LAST_APPLIED_FIX,       null);
+        context.putState(State.FIX_VERIFIED,           false);
+        context.putState("fixPhaseStartIteration", null);
+
     }
 
     // ========== PLANNING METHODS ==========
 
-    private AgentPlan planAnalyzeStability(Test test) {
-        // Backup original content before any modifications
-        if (originalTestContent == null) {
-            originalTestContent = test.getContent();
+    private AgentPlan planAnalyzeStability(AgentContext context, Test test) {
+        if (getOriginalContent(context) == null) {
+            setOriginalContent(context, test.getContent());
         }
 
         Map<String, Object> parameters = new HashMap<>();
@@ -390,9 +331,8 @@ public class FlakyTestAgent extends BaseAgent {
                 .requiresApproval(false)
                 .build();
     }
-
     private AgentPlan planAnalyzeFailure(AgentContext context, Test test) {
-        String stabilityResult = (String) currentTestAnalysis.get("stabilityResult");
+        String stabilityResult = (String) getTestAnalysis(context).get("stabilityResult");
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("stabilityResult", stabilityResult);
@@ -408,8 +348,8 @@ public class FlakyTestAgent extends BaseAgent {
     }
 
     private AgentPlan planRecordPattern(AgentContext context,Test test) {
-        String stabilityResult = (String) currentTestAnalysis.get("stabilityResult");
-        String testClassName = (String) currentTestAnalysis.get("testCaseName");
+        String stabilityResult = (String) getTestAnalysis(context).get("stabilityResult");
+        String testClassName = (String) getTestAnalysis(context).get("testCaseName");
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("stabilityResult", stabilityResult);
@@ -426,18 +366,18 @@ public class FlakyTestAgent extends BaseAgent {
     }
 
     private AgentPlan planGenerateFix(AgentContext context, Test test) {
-        String stabilityResult = (String) currentTestAnalysis.get("stabilityResult");
+        String stabilityResult = (String) getTestAnalysis(context).get("stabilityResult");
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("stabilityResult", stabilityResult);
         parameters.put("testCode", test.getContent());
-        parameters.put("attemptNumber", fixAttemptCount + 1);
+        parameters.put("attemptNumber", getFixAttemptCount(context) + 1);
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.SUGGEST_FIX)
                 .actionParameters(parameters)
                 .reasoning(String.format("Generating fix attempt %d/%d for: %s",
-                        fixAttemptCount + 1, config.getMaxFixAttempts(), test.getName()))
+                        getFixAttemptCount(context) + 1, config.getMaxFixAttempts(), test.getName()))
                 .confidence(0.7)
                 .requiresApproval(false)
                 .build();
@@ -446,7 +386,7 @@ public class FlakyTestAgent extends BaseAgent {
     private AgentPlan planApplyFix(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("testId", test.getId().toString());
-        parameters.put("fixedTestCode", lastAppliedFix);
+        parameters.put("fixedTestCode", getLastAppliedFix(context));
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.MODIFY_FILE)
@@ -492,10 +432,13 @@ public class FlakyTestAgent extends BaseAgent {
         if (branchName == null) {
             branchName = "fix/flaky-" + test.getName().replaceAll("[^a-zA-Z0-9]", "-");
         }
+        int fixAttemptCount = getFixAttemptCount(context);
+
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("storyKey", "FLAKY-" + test.getId().toString().substring(0, 8));
         parameters.put("branchName", branchName);
-        parameters.put("commitMessage", String.format("Fix flaky test: %s\n\nFixed after %d attempts using AI-generated fix",
+        parameters.put("commitMessage", String.format(
+                "Fix flaky test: %s\n\nFixed after %d attempts using AI-generated fix",
                 test.getName(), fixAttemptCount + 1));
         parameters.put("filePaths", List.of("tests/" + test.getName() + ".java"));
 
@@ -526,7 +469,7 @@ public class FlakyTestAgent extends BaseAgent {
 
     private AgentPlan planCreateApprovalForManualReview(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("testCode", originalTestContent); // Restored original
+        parameters.put("testCode", getOriginalContent(context));
         parameters.put("jiraKey", "FLAKY-MANUAL-" + test.getId().toString().substring(0, 8));
         parameters.put("testName", test.getName() + " [NEEDS MANUAL REVIEW]");
         parameters.put("requestedBy", "FlakyTestAgent");
@@ -541,11 +484,12 @@ public class FlakyTestAgent extends BaseAgent {
     }
 
     private AgentPlan planCreatePullRequest(AgentContext context, Test test) {
-// Get branch name from CREATE_BRANCH action result
         String branchName = context.getWorkProduct("branchName", String.class);
         if (branchName == null) {
             branchName = "fix/flaky-" + test.getName().replaceAll("[^a-zA-Z0-9]", "-");
         }
+        int fixAttemptCount = getFixAttemptCount(context);
+
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("storyKey", "FLAKY-" + test.getId().toString().substring(0, 8));
         parameters.put("branchName", branchName);
@@ -567,8 +511,8 @@ public class FlakyTestAgent extends BaseAgent {
         return AgentPlan.builder()
                 .nextAction(AgentActionType.COMPLETE)
                 .actionParameters(Map.of(
-                        "totalAnalyzed", testsToAnalyze.size(),
-                        "results", currentTestAnalysis != null ? currentTestAnalysis : Map.of()
+                        "totalAnalyzed", getTestIds(context).size(),
+                        "results", getTestAnalysis(context)
                 ))
                 .reasoning("All tests processed")
                 .confidence(1.0)
@@ -578,52 +522,119 @@ public class FlakyTestAgent extends BaseAgent {
 
     // ========== STATE MANAGEMENT ==========
 
-    private void updateStateFromActionResult(AgentActionType actionType, Map<String, Object> result) throws JsonProcessingException {
+    private void updateStateFromActionResult(AgentActionType actionType,
+                                             Map<String, Object> result,
+                                             AgentContext context) throws JsonProcessingException {
         switch (actionType) {
             case ANALYZE_TEST_STABILITY, ANALYZE_FAILURE -> {
-                if (currentTestAnalysis == null) {
-                    currentTestAnalysis = new HashMap<>();
-                }
-                currentTestAnalysis.putAll(result);
+                Map<String, Object> analysis = new HashMap<>(getTestAnalysis(context));
+                analysis.putAll(result);
+                setTestAnalysis(context, analysis);
             }
             case SUGGEST_FIX -> {
                 Object fixed = result.get("fixedTestCode");
-
-                lastAppliedFix = objectMapper.writeValueAsString(fixed);
+                    if (fixed instanceof String s) {
+                        setLastAppliedFix(context, s);
+                    }else if (fixed != null) {
+                        setLastAppliedFix(context, objectMapper.writeValueAsString(fixed));
+                    }else {
+                        setLastAppliedFix(context, "{\"steps\":[]}");
+                    }
             }
             case EXECUTE_TEST -> {
-                // This is verification
-                fixVerified = (boolean) result.get("isStable");
+                boolean stable = (boolean) result.getOrDefault("isStable", false);
+                setFixVerified(context, stable);
             }
         }
     }
 
     private void moveToNextTest(AgentContext context) {
-        currentTestIndex++;
-        fixAttemptCount = 0;
-        originalTestContent = null;
-        lastAppliedFix = null;
-        fixVerified = false;
-        currentTestAnalysis = new HashMap<>();
+
+        if (!isFixVerified(context) && getOriginalContent(context) != null
+                && getTestIndex(context) < getTestIds(context).size()) {
+            UUID testId = UUID.fromString(getTestIds(context).get(getTestIndex(context)));
+            testRepository.findById(testId).ifPresent(test -> {
+                test.setContent(getOriginalContent(context));
+                testRepository.save(test);
+                log.info("🔄 Rolled back test content to original for: {}", test.getName());
+            });
+        }
+        setTestIndex(context, getTestIndex(context) + 1);
+        setFixAttemptCount(context, 0);
+        setOriginalContent(context, null);
+        setLastAppliedFix(context, null);
+        setFixVerified(context, false);
+        setTestAnalysis(context, new HashMap<>());
+        context.putState("fixPhaseStartIteration", null);
         context.putState("currentTestStartIteration", context.getCurrentIteration());
     }
 
-    private boolean hasCompletedAction(AgentContext context, AgentActionType actionType) {
-        if (context.getActionHistory() == null || context.getActionHistory().isEmpty()) {
-            return false;
-        }
+    private boolean hasCompletedAction(AgentContext context, AgentActionType actionType, String scope) {
+        if (context.getActionHistory() == null || context.getActionHistory().isEmpty()) return false;
 
-        // Get iteration when current test started
-        Integer testStartIteration = context.getState("currentTestStartIteration", Integer.class);
-        if (testStartIteration == null) {
-            testStartIteration = 0;
-        }
+        String stateKey = "fix".equals(scope) ? "fixPhaseStartIteration" : "currentTestStartIteration";
+        Integer startIter = context.getState(stateKey, Integer.class);
+        if (startIter == null) startIter = 0;
 
-        // Only check actions since current test started
-        Integer finalTestStartIteration = testStartIteration;
+        final int start = startIter;
         return context.getActionHistory().stream()
-                .filter(entry -> entry.getIteration() >= finalTestStartIteration)
+                .filter(entry -> entry.getIteration() >= start)
                 .filter(entry -> entry.getActionType() == actionType)
                 .anyMatch(AgentHistoryEntry::isSuccess);
     }
+
+    interface State {
+        String TESTS_TO_ANALYZE      = "flaky.testsToAnalyze";      // List<String> (UUID strings)
+        String CURRENT_TEST_INDEX    = "flaky.currentTestIndex";     // Integer
+        String CURRENT_TEST_ANALYSIS = "flaky.currentTestAnalysis";  // Map<String,Object>
+        String FIX_ATTEMPT_COUNT     = "flaky.fixAttemptCount";      // Integer
+        String ORIGINAL_CONTENT      = "flaky.originalTestContent";  // String
+        String LAST_APPLIED_FIX      = "flaky.lastAppliedFix";       // String
+        String FIX_VERIFIED          = "flaky.fixVerified";          // Boolean
+    }
+
+    // ── context accessors ─────────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    private List<String> getTestIds(AgentContext ctx) {
+        List<String> ids = ctx.getState(State.TESTS_TO_ANALYZE, List.class);
+        return ids != null ? ids : List.of();
+    }
+
+    private int getTestIndex(AgentContext ctx) {
+        Integer v = ctx.getState(State.CURRENT_TEST_INDEX, Integer.class);
+        return v != null ? v : 0;
+    }
+
+    private void setTestIndex(AgentContext ctx, int v)      { ctx.putState(State.CURRENT_TEST_INDEX, v); }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getTestAnalysis(AgentContext ctx) {
+        Map<String, Object> m = ctx.getState(State.CURRENT_TEST_ANALYSIS, Map.class);
+        return m != null ? m : new HashMap<>();
+    }
+
+    private void setTestAnalysis(AgentContext ctx, Map<String, Object> m) {
+        ctx.putState(State.CURRENT_TEST_ANALYSIS, m);
+    }
+
+    private int getFixAttemptCount(AgentContext ctx) {
+        Integer v = ctx.getState(State.FIX_ATTEMPT_COUNT, Integer.class);
+        return v != null ? v : 0;
+    }
+
+    private void setFixAttemptCount(AgentContext ctx, int v) { ctx.putState(State.FIX_ATTEMPT_COUNT, v); }
+
+    private String getOriginalContent(AgentContext ctx)      { return ctx.getState(State.ORIGINAL_CONTENT, String.class); }
+    private void setOriginalContent(AgentContext ctx, String v) { ctx.putState(State.ORIGINAL_CONTENT, v); }
+
+    private String getLastAppliedFix(AgentContext ctx)       { return ctx.getState(State.LAST_APPLIED_FIX, String.class); }
+    private void setLastAppliedFix(AgentContext ctx, String v) { ctx.putState(State.LAST_APPLIED_FIX, v); }
+
+    private boolean isFixVerified(AgentContext ctx) {
+        Boolean v = ctx.getState(State.FIX_VERIFIED, Boolean.class);
+        return v != null && v;
+    }
+
+    private void setFixVerified(AgentContext ctx, boolean v) { ctx.putState(State.FIX_VERIFIED, v); }
 }

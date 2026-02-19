@@ -24,7 +24,7 @@ class ElementRegistryServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        registryService = new ElementRegistryService(objectMapper);
+      //  registryService = new ElementRegistryService(objectMapper,);
         registryService.init();
     }
 

@@ -72,6 +72,9 @@ public class PlaywrightProperties {
      */
     private String videoDir = System.getProperty("user.home") + "/qa-framework/artifacts/videos";
 
+    private String registryPath = System.getProperty("user.home")
+            + "/qa-framework/registry/element-registry-saucedemo.json";
+
     /**
      * Viewport configuration
      */

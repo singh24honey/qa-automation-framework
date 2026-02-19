@@ -1,6 +1,9 @@
 package com.company.qa.service.agent.tool.impl;
 
 import com.company.qa.model.enums.AgentActionType;
+import com.company.qa.model.intent.IntentActionType;
+import com.company.qa.model.intent.IntentTestStep;
+import com.company.qa.service.agent.TestContentResolver;
 import com.company.qa.service.agent.tool.AgentTool;
 import com.company.qa.service.agent.tool.AgentToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +48,8 @@ public class ExtractBrokenLocatorTool implements AgentTool {
 
     private final ObjectMapper objectMapper;
     private final AgentToolRegistry toolRegistry;
+    private final TestContentResolver contentResolver;
+
 
     // Common error patterns for element not found
     private static final List<Pattern> ERROR_PATTERNS = List.of(
@@ -275,41 +280,38 @@ public class ExtractBrokenLocatorTool implements AgentTool {
         Map<String, Object> context = new HashMap<>();
 
         try {
-            // Parse test content JSON
-            Map<String, Object> contentMap = objectMapper.readValue(testContent, Map.class);
-            List<Map<String, Object>> steps = (List<Map<String, Object>>) contentMap.get("steps");
+            // ✅ Format-agnostic step extraction
+            List<IntentTestStep> steps = contentResolver.getSteps(testContent);
 
-            if (steps == null || steps.isEmpty()) {
+            if (steps.isEmpty()) {
                 context.put("pageName", "unknown");
                 context.put("elementPurpose", "unknown");
                 context.put("actionType", "unknown");
                 return context;
             }
 
-            // Find failed step or last step
-            Map<String, Object> failedStep = failedStepIndex != null && failedStepIndex < steps.size()
+            IntentTestStep failedStep = (failedStepIndex != null && failedStepIndex < steps.size())
                     ? steps.get(failedStepIndex)
                     : steps.get(steps.size() - 1);
 
-            // Infer page name from previous navigation
+            // Infer page name from preceding NAVIGATE step
             String pageName = "unknown";
-            for (int i = steps.indexOf(failedStep) - 1; i >= 0; i--) {
-                Map<String, Object> step = steps.get(i);
-                if ("navigate".equals(step.get("action"))) {
-                    String url = (String) step.get("value");
-                    pageName = inferPageNameFromUrl(url);
+            int failedIdx = steps.indexOf(failedStep);
+            for (int i = failedIdx - 1; i >= 0; i--) {
+                IntentTestStep step = steps.get(i);
+                if (step.getAction() == IntentActionType.NAVIGATE && step.getValue() != null) {
+                    pageName = inferPageNameFromUrl(step.getValue());
                     break;
                 }
             }
 
-            // Get element purpose from action
-            String action = (String) failedStep.get("action");
-            String locator = (String) failedStep.get("locator");
-            String elementPurpose = inferElementPurpose(action, locator);
+            String actionType = failedStep.getAction() != null
+                    ? failedStep.getAction().name() : "unknown";
+            String elementPurpose = inferElementPurpose(actionType, failedStep.getLocator());
 
             context.put("pageName", pageName);
             context.put("elementPurpose", elementPurpose);
-            context.put("actionType", action);
+            context.put("actionType", actionType);
 
         } catch (Exception e) {
             log.warn("Failed to parse test context: {}", e.getMessage());

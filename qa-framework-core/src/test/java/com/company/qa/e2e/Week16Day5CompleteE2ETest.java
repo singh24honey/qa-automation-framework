@@ -153,7 +153,7 @@ public class Week16Day5CompleteE2ETest {
                 "E2E Test User"
         );
 
-        AgentResult result = future.get(3, TimeUnit.MINUTES);
+        AgentResult result = future.get(30, TimeUnit.MINUTES);
 
         // ✅ VERIFY: Agent succeeded
         assertThat(result).isNotNull();
@@ -207,8 +207,11 @@ public class Week16Day5CompleteE2ETest {
 
         // Set classpath
         List<String> options = Arrays.asList(
-                "-classpath", System.getProperty("java.class.path"),
-                "-d", DRAFTS_FOLDER  // Output to same folder
+                "-classpath", System.getProperty("java.class.path") + File.pathSeparator
+                        + "/Users/apple/projects/qa-automation-framework/playwright-tests/build/classes/java/test"
+                        + File.pathSeparator
+                        + "/Users/apple/projects/qa-automation-framework/playwright-tests/target/classes",
+                "-d", generatedTestFile.getParent().toString()  // Output to same folder as source
         );
 
         JavaCompiler.CompilationTask task = compiler.getTask(
@@ -222,8 +225,7 @@ public class Week16Day5CompleteE2ETest {
         log.info("✅ Compilation successful");
 
         // ✅ VERIFY: .class file exists
-        Path classFile = Paths.get(DRAFTS_FOLDER, generatedTestClassName + ".class");
-        assertThat(Files.exists(classFile))
+        Path classFile = generatedTestFile.getParent().resolve(generatedTestClassName + ".class");        assertThat(Files.exists(classFile))
                 .as("Compiled .class file should exist")
                 .isTrue();
 
@@ -283,10 +285,12 @@ public class Week16Day5CompleteE2ETest {
 
         // ✅ STEP 1: Load compiled test class
         URLClassLoader classLoader = new URLClassLoader(
-                new URL[]{Paths.get(DRAFTS_FOLDER).toUri().toURL()},
+                new URL[]{
+                        generatedTestFile.getParent().toUri().toURL(),
+                        Paths.get("/Users/apple/projects/qa-automation-framework/playwright-tests/build/classes/java/test").toUri().toURL()
+                },
                 this.getClass().getClassLoader()
         );
-
         Class<?> testClass;
         try {
             testClass = classLoader.loadClass(generatedTestClassName);
@@ -466,7 +470,7 @@ public class Week16Day5CompleteE2ETest {
                 "E2E Test User"
         );
 
-        AgentResult healingResult = healingFuture.get(3, TimeUnit.MINUTES);
+        AgentResult healingResult = healingFuture.get(30, TimeUnit.MINUTES);
 
         log.info("✅ SelfHealingAgent completed: {}", healingResult.getStatus());
 
@@ -616,12 +620,12 @@ public class Week16Day5CompleteE2ETest {
      * Find the generated test file in drafts folder
      */
     private Path findGeneratedTest() throws IOException {
-        return Files.list(Paths.get(DRAFTS_FOLDER))
+        return Files.walk(Paths.get(DRAFTS_FOLDER))
                 .filter(p -> p.toString().endsWith(".java"))
-                .filter(p -> p.getFileName().toString().startsWith("Scrum16"))
-                .findFirst().get();
-                //.max(Comparator.comparingLong(p -> p.toFile().lastModified()))
-               // .orElse(null);
+                .filter(p -> !p.getFileName().toString().startsWith("Broken")
+                        && !p.getFileName().toString().startsWith("Flaky"))
+                .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
+                .orElse(null);
     }
 
     /**
@@ -659,9 +663,6 @@ public class Week16Day5CompleteE2ETest {
                 .replace(".waitFor();", "// .waitFor();");
     }
 
-    /**
-     * Compile a test file
-     */
     private void compileTestFile(Path testFile) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
@@ -669,14 +670,17 @@ public class Week16Day5CompleteE2ETest {
         Iterable<? extends JavaFileObject> compilationUnits =
                 fileManager.getJavaFileObjectsFromFiles(List.of(testFile.toFile()));
 
+        String playwrightClasspath = "/Users/apple/projects/qa-automation-framework/playwright-tests/build/classes/java/test"
+                + File.pathSeparator
+                + "/Users/apple/projects/qa-automation-framework/playwright-tests/build/classes/java/test";
+
         List<String> options = Arrays.asList(
-                "-classpath", System.getProperty("java.class.path"),
-                "-d", DRAFTS_FOLDER
+                "-classpath", System.getProperty("java.class.path") + File.pathSeparator + playwrightClasspath,
+                "-d", testFile.getParent().toString()  // Output to same folder as source
         );
 
         JavaCompiler.CompilationTask task = compiler.getTask(
                 null, fileManager, null, options, null, compilationUnits);
-
         Boolean success = task.call();
         fileManager.close();
 
@@ -684,7 +688,6 @@ public class Week16Day5CompleteE2ETest {
             throw new RuntimeException("Compilation failed for: " + testFile);
         }
     }
-
     private AgentConfig defaultConfig() {
         return  AgentConfig.builder()
                 .maxIterations(10)

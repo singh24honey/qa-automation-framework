@@ -140,8 +140,13 @@ public class TestIntentValidator {
         }
 
         // R7: Value required
-        if (action.requiresValue() && isBlank(step.getValue())) {
-            result.addError(label + ": " + action.name() + " requires a value");
+        // NOTE: We use isNull() not isBlank() here intentionally.
+        // A null value means the AI omitted the field entirely — that's an error.
+        // An empty string ("") is VALID test data for actions like FILL used to test
+        // empty-field validation scenarios (e.g., testEmptyUsername submits "" to the field).
+        // isBlank() would incorrectly reject these legitimate edge-case test scenarios.
+        if (action.requiresValue() && isNull(step.getValue())) {
+            result.addError(label + ": " + action.name() + " requires a value (set to empty string \"\" if intentionally blank)");
         }
 
         // R8 + R9: Locator format (only if locator is present)
@@ -175,5 +180,14 @@ public class TestIntentValidator {
 
     private boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /**
+     * Checks if a value is strictly null (absent from JSON).
+     * Unlike isBlank(), this allows empty strings as valid test data.
+     * Used for R7 validation where "" is a legitimate test value (e.g., empty field submission tests).
+     */
+    private boolean isNull(String s) {
+        return s == null;
     }
 }
