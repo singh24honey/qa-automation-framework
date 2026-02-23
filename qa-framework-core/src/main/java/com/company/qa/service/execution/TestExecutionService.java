@@ -10,31 +10,46 @@ import com.company.qa.execution.decision.ExecutionMode;
 import com.company.qa.execution.decision.ExecutionModeDecider;
 import com.company.qa.execution.engine.ExecutionEngine;
 import com.company.qa.execution.engine.ExecutionResult;
+import com.company.qa.model.agent.AgentConfig;
+import com.company.qa.model.agent.AgentGoal;
 import com.company.qa.model.dto.ExecutionRequest;
 import com.company.qa.model.dto.ExecutionResponse;
 import com.company.qa.model.dto.RetryConfig;
 import com.company.qa.model.dto.TestScript;
 import com.company.qa.model.entity.Test;
 import com.company.qa.model.entity.TestExecution;
+import com.company.qa.model.enums.AgentType;
 import com.company.qa.model.enums.TestFramework;
 import com.company.qa.model.enums.TestStatus;
 import com.company.qa.quality.model.QualityGateResult;
 import com.company.qa.quality.service.QualityGateService;
 import com.company.qa.repository.TestExecutionRepository;
 import com.company.qa.repository.TestRepository;
+import com.company.qa.service.agent.AgentOrchestrator;
+import com.company.qa.service.playwright.TestIntentParser;
 import com.company.qa.service.quality.TestQualityHistoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.company.qa.service.playwright.TestIntentParser;
+import com.company.qa.model.intent.TestIntent;
+import com.company.qa.model.intent.TestScenario;
+import com.company.qa.model.intent.IntentTestStep;
+import com.company.qa.model.dto.TestStep;
+import com.company.qa.model.dto.TestScript;
+import java.util.ArrayList;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -56,16 +71,21 @@ public class TestExecutionService {
     private final TestAnalyticsService testAnalyticsService;
     private final QualityGateService qualityGateService;
     private final AiRecommendationService aiRecommendationService;
+    private final AgentOrchestrator agentOrchestrator;
+    private final TestIntentParser testIntentParser;
+
 
     @Autowired
     private TestQualityHistoryService qualityHistoryService;  // Inject
 
-
+    @Autowired
+    @Lazy
+    private TestExecutionService self;
     @Value("${execution.timeout-minutes:10}")
     private int timeoutMinutes;
 
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ExecutionResponse startExecution(ExecutionRequest request) {
 
         TestExecution execution = TestExecution.builder()
@@ -73,8 +93,9 @@ public class TestExecutionService {
                 .status(TestStatus.QUEUED)
                 .environment(request.getEnvironment())
                 .browser(request.getBrowser())
-                .platform("Selenium Grid")
+                .platform("Playwright")
                 .triggeredBy("API")
+                .executionMode(ExecutionMode.INTERNAL)  // default, may change in async method
                 .retryCount(0)
                 .externalExecutionRef(UUID.randomUUID().toString())
                 .startTime(Instant.now())
@@ -83,7 +104,7 @@ public class TestExecutionService {
         execution = testExecutionRepository.save(execution);
 
         // Fire async execution
-        executeAsyncInternal(execution.getId(), request);
+        executeAsyncInternal(execution.getId(), request); // ← goes through proxy → truly async
 
         return toResponse(execution); // ✅ executionId ALWAYS present
     }
@@ -108,6 +129,14 @@ public class TestExecutionService {
             execution.setStatus(TestStatus.RUNNING);
             execution.setStartTime(Instant.now());
             testExecutionRepository.save(execution);
+
+            // After: testExecutionRepository.save(execution);
+
+
+            if (execution.getStatus() == TestStatus.FAILED
+                    || execution.getStatus() == TestStatus.ERROR) {
+                autoTriggerHealingIfNeeded(request.getTestId(), execution);
+            }
 
             Test test = testRepository.findById(request.getTestId())
                     .orElseThrow(() ->
@@ -210,7 +239,7 @@ public class TestExecutionService {
 
             testExecutionRepository.save(execution);
             qualityHistoryService.recordExecutionHistory(execution);
-
+            updateTestExecutionMetadata(request.getTestId(), execution);
             cancellationService.clearCancellation(executionId);
 
             log.info("Execution completed: {} status={}", executionId, execution.getStatus());
@@ -224,6 +253,65 @@ public class TestExecutionService {
             testExecutionRepository.save(execution);
 
             cancellationService.clearCancellation(executionId);
+        }
+    }
+
+    private void updateTestExecutionMetadata(UUID testId, TestExecution execution) {
+        try {
+            testRepository.findById(testId).ifPresent(test -> {
+                test.setLastExecutionStatus(execution.getStatus());
+                test.setLastExecutedAt(execution.getEndTime());
+                test.setTotalRunCount(
+                        (test.getTotalRunCount() == null ? 0 : test.getTotalRunCount()) + 1);
+
+                if (execution.getStatus() == TestStatus.FAILED
+                        || execution.getStatus() == TestStatus.ERROR) {
+                    test.setLastExecutionError(execution.getErrorDetails()); // full Playwright stack trace
+                    test.setConsecutiveFailureCount(
+                            (test.getConsecutiveFailureCount() == null ? 0
+                                    : test.getConsecutiveFailureCount()) + 1);
+                } else if (execution.getStatus() == TestStatus.PASSED) {
+                    test.setLastExecutionError(null);      // clear on pass
+                    test.setConsecutiveFailureCount(0);    // reset streak
+                }
+                testRepository.save(test);
+            });
+        } catch (Exception e) {
+            // Non-fatal — execution record already saved, metadata is best-effort
+            log.warn("Failed to update test execution metadata for {}: {}", testId, e.getMessage());
+        }
+    }
+
+    private void autoTriggerHealingIfNeeded(UUID testId, TestExecution execution) {
+        try {
+            testRepository.findById(testId).ifPresent(test -> {
+                int failures = test.getConsecutiveFailureCount() == null
+                        ? 0 : test.getConsecutiveFailureCount();
+
+                if (failures >= 2 && execution.getErrorDetails() != null) {
+                    log.info("🤖 Auto-triggering SelfHealingAgent for test {} ({} consecutive failures)",
+                            testId, failures);
+
+                    AgentGoal goal = AgentGoal.builder()
+                            .goalType("FIX_BROKEN_TEST")
+                            .parameters(Map.of(
+                                    "testId",       testId.toString(),
+                                    "errorMessage", execution.getErrorDetails()  // full Playwright stack trace
+                            ))
+                            .build();
+
+                    AgentConfig config = AgentConfig.builder()
+                            .maxIterations(25)
+                            .maxAICost(3.0)
+                            .build();
+
+                    agentOrchestrator.startAgent(
+                            AgentType.SELF_HEALING_TEST_FIXER,
+                            goal, config, null, "system-auto-heal");
+                }
+            });
+        } catch (Exception e) {
+            log.warn("Failed to auto-trigger healing for {}: {}", testId, e.getMessage());
         }
     }
 
@@ -371,12 +459,46 @@ public class TestExecutionService {
     }
 
     private TestScript parseTestScript(String content) {
-        try {
-            return objectMapper.readValue(content, TestScript.class);
-        } catch (Exception e) {
-            log.error("Failed to parse test script: {}", e.getMessage());
-            throw new RuntimeException("Invalid test script format", e);
+        if (content == null || content.isBlank()) {
+            throw new RuntimeException("Test content is empty");
         }
+
+        // Try TestIntent (INTENT_V1) first — this is what all AI-generated tests store
+        TestIntentParser.ParseResult result = testIntentParser.parse(content);
+        if (result.isSuccess()) {
+            return flattenIntentToScript(result.getIntent());
+        }
+
+        // Fallback: legacy TestScript format (pre-INTENT_V1 Selenium tests)
+        try {
+            TestScript script = objectMapper.readValue(content, TestScript.class);
+            if (script.getSteps() != null && !script.getSteps().isEmpty()) {
+                return script;
+            }
+        } catch (Exception ignored) {}
+
+        throw new RuntimeException("Content is neither TestIntent nor TestScript: "
+                + result.getErrorMessage());
+    }
+
+    private TestScript flattenIntentToScript(TestIntent intent) {
+        List<TestStep> allSteps = new ArrayList<>();
+        for (TestScenario scenario : intent.getScenarios()) {
+            if (scenario.getSteps() == null) continue;
+            for (IntentTestStep s : scenario.getSteps()) {
+                allSteps.add(TestStep.builder()
+                        .action(s.getAction().name().toLowerCase())
+                        .locator(s.getLocator())
+                        .value(s.getValue())
+                        .timeout(s.getTimeout())
+                        .build());
+            }
+        }
+        log.info("Flattened {} scenarios → {} steps", intent.getScenarios().size(), allSteps.size());
+        return TestScript.builder()
+                .name(intent.getTestClassName())
+                .steps(allSteps)
+                .build();
     }
 
     private ExecutionResponse toResponse(TestExecution execution) {

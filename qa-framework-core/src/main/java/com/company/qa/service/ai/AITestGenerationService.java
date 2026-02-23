@@ -77,6 +77,8 @@ public class AITestGenerationService {
     private final JiraContextBuilder jiraContextBuilder;
 
     // File writer (to be implemented in Part 3)
+    /** @deprecated System 1 file writer — no longer called. See DraftFileService. */
+    @Deprecated(since = "Phase 2", forRemoval = false)
     private final TestFileWriterService fileWriterService;
 
     private final JiraStoryService jiraStoryService;
@@ -192,9 +194,9 @@ public class AITestGenerationService {
             generatedTest = aiGeneratedTestRepository.save(generatedTest);
 
             // Step 9: Write to draft folder
-            String draftPath = fileWriterService.writeToDraftFolder(generatedTest, testCode);
-            generatedTest.setDraftFolderPath(draftPath);
-            aiGeneratedTestRepository.save(generatedTest);
+            //String draftPath = fileWriterService.writeToDraftFolder(generatedTest, testCode);
+            //generatedTest.setDraftFolderPath(draftPath);
+            //aiGeneratedTestRepository.save(generatedTest);
 
             // Step 10: Mark attempt as successful
             attempt.setSuccess(true);

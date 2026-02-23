@@ -28,6 +28,8 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.annotation.Primary;
+
 
 import java.io.File;
 import java.io.IOException;
@@ -45,6 +47,7 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
+@Primary
 @Slf4j
 @Profile("!mock-git")
 public class GitServiceImpl implements GitService {

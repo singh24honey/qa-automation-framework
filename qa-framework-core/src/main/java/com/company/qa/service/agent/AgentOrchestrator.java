@@ -174,7 +174,7 @@ public class AgentOrchestrator {
                 executionService.recordError(executionId, e.getMessage());
                 throw new RuntimeException("Agent execution failed", e);
             }
-        }, java.util.concurrent.Executors.newSingleThreadExecutor());
+        }, Executors.newSingleThreadExecutor());
 
         // Register stop flag before adding to runningAgents so stopAgent() can set it
         stopFlags.put(executionId, new AtomicBoolean(false));

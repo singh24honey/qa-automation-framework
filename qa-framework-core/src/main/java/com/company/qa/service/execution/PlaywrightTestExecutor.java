@@ -55,6 +55,7 @@ public class PlaywrightTestExecutor {
                 case "navigate" -> executeNavigate(page, step);
                 case "click" -> executeClick(page, step);
                 case "type", "sendkeys" -> executeType(page, step);
+                case "fill", "fill_field", "fillfield" -> executeType(page, step);
                 case "clear" -> executeClear(page, step);
                 case "select" -> executeSelect(page, step);
                 case "check" -> executeCheck(page, step);
@@ -82,6 +83,34 @@ public class PlaywrightTestExecutor {
                 case "login" ->
                         log.warn("⚠️ 'login' is not a supported atomic action — skipping. " +
                                 "Use 'type' for username/password fields and 'click' for the button.");
+                case "asserturl", "assert_url", "verifyurl", "verify_url" ->
+                        executeAssertUrl(page, step);
+                case "asserttitle", "assert_title", "verifytitle" ->
+                        executeAssertTitle(page, step);
+                case "asserthidden", "assert_hidden", "assertnotvisible", "verifyhidden" ->
+                        executeAssertHidden(page, step);
+                case "assertcount", "assert_count", "verifycount" ->
+                        executeAssertCount(page, step);
+                case "assertvalue", "assert_value", "verifyvalue" ->
+                        executeAssertValue(page, step);
+                case "assertenabled", "assert_enabled", "verifyenabled" ->
+                        executeAssertEnabled(page, step);
+                case "assertdisabled", "assert_disabled", "verifydisabled" ->
+                        executeAssertDisabled(page, step);
+                case "waitforselector", "wait_for_selector" ->
+                        executeWaitForSelector(page, step);
+                case "waitforurl", "wait_for_url" ->
+                        executeWaitForUrl(page, step);
+                case "goback", "go_back" ->
+                        executeGoBack(page, step);
+                case "reload" ->
+                        executeReload(page, step);
+                case "hover" ->
+                        executeHover(page, step);
+                case "presskey", "press_key" ->
+                        executePressKey(page, step);
+                case "selectoption", "select_option" ->
+                        executeSelectOption(page, step);
                 default -> throw new IllegalArgumentException(
                         "Unsupported action: " + step.getAction()
                 );
@@ -328,12 +357,22 @@ public class PlaywrightTestExecutor {
     /**
      * Execute VERIFY_VISIBLE/ASSERTVISIBLE action.
      */
+    /**
+     * Execute VERIFY_VISIBLE/ASSERTVISIBLE action.
+     *
+     * Uses locator.first() to avoid Playwright strict mode violations when the
+     * CSS selector matches multiple elements (e.g. ".cart_item" with 2 cart items).
+     * For assert_visible the intent is "at least one matching element is visible",
+     * not "exactly one element exists" — strict mode is the wrong contract here.
+     */
     private void executeVerifyVisible(Page page, TestStep step) {
         Locator locator = resolveLocator(page, step);
 
         log.debug("Verifying element visible: {}", step.getLocator());
 
-        if (!locator.isVisible()) {
+        // Use first() to handle multi-match locators without strict mode violation.
+        // isVisible() on the raw locator throws if >1 element matches; first() is safe.
+        if (!locator.first().isVisible()) {
             throw new AssertionError(
                     "Element is not visible: " + step.getLocator()
             );
@@ -394,7 +433,9 @@ public class PlaywrightTestExecutor {
             case ROLE -> resolveRoleLocator(page, value);
             case LABEL -> page.getByLabel(value);
             case TEXT -> page.getByText(value);
-            case TESTID -> page.getByTestId(value);
+            // ✅ FIXED: Saucedemo uses data-test attribute, not data-testid (Playwright default)
+            // Use CSS attribute selector directly to avoid Playwright testIdAttribute config dependency
+            case TESTID -> page.locator("[data-test='" + value + "']");
             case CSS -> page.locator(value);
             case XPATH -> page.locator("xpath=" + value);
             case ID -> page.locator("#" + value);
@@ -507,4 +548,111 @@ public class PlaywrightTestExecutor {
             return Collections.emptyList();
         }
     }
+
+    private void executeAssertUrl(Page page, TestStep step) {
+        String expectedPattern = step.getValue();
+        if (expectedPattern == null) throw new IllegalArgumentException("assertUrl requires value");
+        String actualUrl = page.url();
+        log.debug("assertUrl: expected pattern='{}', actual='{}'", expectedPattern, actualUrl);
+        if (!actualUrl.matches(expectedPattern) && !actualUrl.contains(expectedPattern)) {
+            throw new AssertionError(
+                    String.format("URL assertion failed. Expected pattern: '%s', Actual: '%s'",
+                            expectedPattern, actualUrl));
+        }
+    }
+
+    private void executeAssertTitle(Page page, TestStep step) {
+        String expected = step.getValue();
+        if (expected == null) throw new IllegalArgumentException("assertTitle requires value");
+        String actual = page.title();
+        if (!actual.contains(expected)) {
+            throw new AssertionError(
+                    String.format("Title assertion failed. Expected: '%s', Actual: '%s'", expected, actual));
+        }
+    }
+
+    private void executeAssertHidden(Page page, TestStep step) {
+        Locator locator = resolveLocator(page, step);
+        if (locator.first().isVisible()) {
+            throw new AssertionError("Element should be hidden but is visible: " + step.getLocator());
+        }
+    }
+
+    private void executeAssertCount(Page page, TestStep step) {
+        String expected = step.getValue();
+        if (expected == null) throw new IllegalArgumentException("assertCount requires value");
+        Locator locator = resolveLocator(page, step);
+        int actual = locator.count();
+        if (actual != Integer.parseInt(expected.trim())) {
+            throw new AssertionError(
+                    String.format("Count assertion failed. Expected: %s, Actual: %d", expected, actual));
+        }
+    }
+
+    private void executeAssertValue(Page page, TestStep step) {
+        String expected = step.getValue();
+        if (expected == null) throw new IllegalArgumentException("assertValue requires value");
+        Locator locator = resolveLocator(page, step);
+        String actual = locator.inputValue();
+        if (!actual.contains(expected)) {
+            throw new AssertionError(
+                    String.format("Value assertion failed. Expected: '%s', Actual: '%s'", expected, actual));
+        }
+    }
+
+    private void executeAssertEnabled(Page page, TestStep step) {
+        Locator locator = resolveLocator(page, step);
+        if (!locator.isEnabled()) {
+            throw new AssertionError("Element should be enabled but is disabled: " + step.getLocator());
+        }
+    }
+
+    private void executeAssertDisabled(Page page, TestStep step) {
+        Locator locator = resolveLocator(page, step);
+        if (locator.isEnabled()) {
+            throw new AssertionError("Element should be disabled but is enabled: " + step.getLocator());
+        }
+    }
+
+    private void executeWaitForSelector(Page page, TestStep step) {
+        Locator locator = resolveLocator(page, step);
+        locator.waitFor();
+    }
+
+    private void executeWaitForUrl(Page page, TestStep step) {
+        String expectedUrl = step.getValue();
+        if (expectedUrl == null) throw new IllegalArgumentException("waitForUrl requires value");
+        page.waitForURL(expectedUrl);
+    }
+
+    private void executeGoBack(Page page, TestStep step) {
+        page.goBack();
+    }
+
+    private void executeReload(Page page, TestStep step) {
+        page.reload();
+    }
+
+    private void executeHover(Page page, TestStep step) {
+        Locator locator = resolveLocator(page, step);
+        locator.hover();
+    }
+
+    private void executePressKey(Page page, TestStep step) {
+        String key = step.getValue();
+        if (key == null) throw new IllegalArgumentException("pressKey requires value");
+        if (step.getLocator() != null && !step.getLocator().isBlank()) {
+            resolveLocator(page, step).press(key);
+        } else {
+            page.keyboard().press(key);
+        }
+    }
+
+    private void executeSelectOption(Page page, TestStep step) {
+        String value = step.getValue();
+        if (value == null) throw new IllegalArgumentException("selectOption requires value");
+        Locator locator = resolveLocator(page, step);
+        locator.selectOption(value);
+    }
+
 }

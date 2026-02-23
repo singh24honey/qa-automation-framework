@@ -32,6 +32,20 @@ import java.util.Map;
  *         LoginSteps.java
  *         LoginPage.java
  */
+/**
+ * File writer for the pre-agent-era test generation pipeline.
+ *
+ * <p>Writes to {@code ${ai.test-generation.draft-folder}/type/jiraKey/timestamp/}.
+ * This folder is never read by the QA team or any active agent workflow.
+ *
+ * @deprecated System 1 (pre-agent era). Superseded by
+ *             {@link com.company.qa.service.draft.DraftFileService}
+ *             which writes to {@code playwright-tests/drafts/} — the path
+ *             the QA team actually runs tests from.
+ *             {@code writeToDraftFolder()} call removed from
+ *             {@code AITestGenerationService}. Will be removed in a future release.
+ */
+@Deprecated(since = "Phase 2", forRemoval = false)
 @Service
 @Slf4j
 public class TestFileWriterService {

@@ -140,6 +140,39 @@ public class FlakyTestAgent extends BaseAgent {
         if (!hasAnalyzedFailure)   return planAnalyzeFailure(context, test);
         if (!hasRecordedPattern)   return planRecordPattern(context, test);
 
+
+        String rootCause = (String) getTestAnalysis(context).get("rootCause");
+
+        if ("LOCATOR_BRITTLENESS".equals(rootCause)) {
+            log.info("🔀 Root cause LOCATOR_BRITTLENESS on '{}' — delegating to SelfHealingAgent",
+                    test.getName());
+
+            // Extract the first error message so SelfHealingAgent knows what broke
+            String errorMessage = extractFirstErrorMessage(context);
+
+            AgentGoal healGoal = AgentGoal.builder()
+                    .goalType("FIX_BROKEN_LOCATOR")
+                    .successCriteria("Fix broken locator in test: " + test.getName())
+                    .parameters(Map.of(
+                            "testId",         test.getId().toString(),
+                            "errorMessage",   errorMessage != null ? errorMessage : "Element not found",
+                            "triggeredBy",    "FlakyTestAgent",
+                            "sourceTestName", test.getName()
+                    ))
+                    .build();
+
+            orchestrator.startAgent(
+                    AgentType.SELF_HEALING_TEST_FIXER,
+                    healGoal,
+                    null,            // system-triggered, no user UUID
+                    "FlakyTestAgent"
+            );
+
+            log.info("✅ SelfHealingAgent started for test: {} (id: {})", test.getName(), test.getId());
+
+            moveToNextTest(context);      // advance FlakyAgent to the next test
+            return plan(context);
+        }
         // DAY 2
         int fixAttemptCount = getFixAttemptCount(context);
         if (fixAttemptCount < config.getMaxFixAttempts()) {
@@ -174,6 +207,27 @@ public class FlakyTestAgent extends BaseAgent {
         return plan(context);
     }
 
+
+    /**
+     * Extract the first error message from the stability analysis stored in context,
+     * so SelfHealingAgent has a concrete failure string to parse.
+     */
+    private String extractFirstErrorMessage(AgentContext context) {
+        try {
+            String stabilityResultJson = (String) getTestAnalysis(context).get("stabilityResult");
+            if (stabilityResultJson == null) return null;
+
+            StabilityAnalysisResult result = objectMapper.readValue(
+                    stabilityResultJson, StabilityAnalysisResult.class);
+
+            List<String> errors = result.getErrorMessages();
+            return (errors != null && !errors.isEmpty()) ? errors.get(0) : null;
+
+        } catch (Exception e) {
+            log.warn("Could not extract error message: {}", e.getMessage());
+            return null;
+        }
+    }
     /**
      * ✅ NEW HELPER: Count consecutive failures of same action
      */
@@ -434,18 +488,36 @@ public class FlakyTestAgent extends BaseAgent {
         }
         int fixAttemptCount = getFixAttemptCount(context);
 
+        // ✅ Resolve the actual draft file path from DraftFileService working directory.
+        // Previously hardcoded "tests/" + test.getName() + ".java" which never existed on disk
+        // causing GitServiceImpl to throw "Source file not found".
+        // The file was written by WriteTestFileTool to playwright-tests/drafts/
+        // at generation time. Construct the path the same way DraftFileService resolves it.
+        String draftFileName = test.getName().replace(" ", "_") + ".java";
+        String draftFilePath = context.getWorkProduct("draftFilePath", String.class);
+        if (draftFilePath == null) {
+            // Fallback: reconstruct from DraftFileService root config
+            // CommitChangesTool will log a warning if file is not found
+            draftFilePath = "playwright-tests/drafts/" + draftFileName;
+        }
+
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("storyKey", "FLAKY-" + test.getId().toString().substring(0, 8));
-        parameters.put("branchName", branchName);
-        parameters.put("commitMessage", String.format(
+        parameters.put("storyKey",       "FLAKY-" + test.getId().toString().substring(0, 8));
+        parameters.put("branchName",     branchName);
+        parameters.put("commitMessage",  String.format(
                 "Fix flaky test: %s\n\nFixed after %d attempts using AI-generated fix",
                 test.getName(), fixAttemptCount + 1));
-        parameters.put("filePaths", List.of("tests/" + test.getName() + ".java"));
+        parameters.put("filePaths",      List.of(draftFilePath));
+        // ✅ Pass aiGeneratedTestId so GitServiceImpl can load the AIGeneratedTest record
+        String aiGenId = context.getWorkProduct("aiGeneratedTestId", String.class);
+        if (aiGenId != null) {
+            parameters.put("aiGeneratedTestId", aiGenId);
+        }
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.COMMIT_CHANGES)
                 .actionParameters(parameters)
-                .reasoning("Committing flaky test fix")
+                .reasoning("Committing flaky test fix from playwright-tests/drafts/")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();
@@ -453,15 +525,17 @@ public class FlakyTestAgent extends BaseAgent {
 
     private AgentPlan planCreateApproval(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("testCode", test.getContent());
-        parameters.put("jiraKey", "FLAKY-" + test.getId().toString().substring(0, 8));
-        parameters.put("testName", test.getName());
+        parameters.put("testCode",    test.getContent());
+        parameters.put("jiraKey",     "FLAKY-" + test.getId().toString().substring(0, 8));
+        parameters.put("testName",    test.getName());
         parameters.put("requestedBy", "FlakyTestAgent");
+        // ✅ Git branch already committed — approval is PR review gate, no file sync needed
+        parameters.put("requestType", "FLAKY_FIX");
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)
                 .actionParameters(parameters)
-                .reasoning("Creating approval request for flaky test fix")
+                .reasoning("Flakiness fix committed to Git branch — creating PR review approval")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();
@@ -469,15 +543,19 @@ public class FlakyTestAgent extends BaseAgent {
 
     private AgentPlan planCreateApprovalForManualReview(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("testCode", getOriginalContent(context));
-        parameters.put("jiraKey", "FLAKY-MANUAL-" + test.getId().toString().substring(0, 8));
-        parameters.put("testName", test.getName() + " [NEEDS MANUAL REVIEW]");
+        // ✅ Intentionally sends original content — do NOT change to test.getContent()
+        // Content is the original broken version. Writing it to disk would regress the file.
+        parameters.put("testCode",    getOriginalContent(context));
+        parameters.put("jiraKey",     "FLAKY-MANUAL-" + test.getId().toString().substring(0, 8));
+        parameters.put("testName",    test.getName() + " [NEEDS MANUAL REVIEW]");
         parameters.put("requestedBy", "FlakyTestAgent");
+        // ✅ No file sync — original content, human must fix manually
+        parameters.put("requestType", "FLAKY_MANUAL");
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)
                 .actionParameters(parameters)
-                .reasoning("All fix attempts failed - flagging for manual review")
+                .reasoning("All fix attempts failed — flagging for manual review")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();

@@ -62,18 +62,34 @@ public class CreateApprovalRequestTool implements AgentTool {
         String testFramework = (String) parameters.getOrDefault("testFramework", "PLAYWRIGHT");
         String requestedByName = (String) parameters.getOrDefault("requestedBy", "agent-system");
 
+        String requestTypeStr    = (String) parameters.get("requestType");
+
         // Optional: AI metadata if available
         Map<String, Object> aiMetadata = (Map<String, Object>) parameters.get("aiMetadata");
+        String aiGeneratedTestIdStr = (String) parameters.get("aiGeneratedTestId");
+        log.info("🔍 DEBUG CreateApprovalRequestTool: aiGeneratedTestId = {}", aiGeneratedTestIdStr); // TEMP
+
+
+        // Resolve requestType — default to TEST_GENERATION for backward compatibility
+        ApprovalRequestType requestType = ApprovalRequestType.TEST_GENERATION;
+        if (requestTypeStr != null && !requestTypeStr.isBlank()) {
+            try {
+                requestType = ApprovalRequestType.valueOf(requestTypeStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                log.warn("Unknown requestType '{}' — defaulting to TEST_GENERATION", requestTypeStr);
+            }
+        }
 
         try {
             // Build CreateApprovalRequestDTO
             CreateApprovalRequestDTO createDto = CreateApprovalRequestDTO.builder()
-                    .requestType(ApprovalRequestType.TEST_GENERATION)
+                    .requestType(requestType)
                     .generatedContent(testCode)
                     .aiResponseMetadata(aiMetadata)
                     .testName(testName)
                     .testFramework(testFramework)
                     .testLanguage("Java")
+                    .autoCommitOnApproval(false)    // ✅ ADD THIS — agent handles Git itself
                     .requestedByName(requestedByName)
                     .requestedByEmail(requestedByName + "@agent.system")  // Agent email
                     .autoExecuteOnApproval(false)  // Manual execution
@@ -81,6 +97,10 @@ public class CreateApprovalRequestTool implements AgentTool {
                     .sanitizationApplied(true)  // Assume sanitization was done
                     .redactionCount(0)
                     .requestedById(UUID.randomUUID())
+                    .aiGeneratedTestId(                                              // ✅ ADD THIS
+                            aiGeneratedTestIdStr != null
+                                    ? UUID.fromString(aiGeneratedTestIdStr)
+                                    : null)
                     .build();
 
             log.debug("Creating approval request for test: {} (story: {})", testName, jiraKey);
@@ -132,6 +152,8 @@ public class CreateApprovalRequestTool implements AgentTool {
         schema.put("testFramework", "string (optional) - Test framework (default: PLAYWRIGHT)");
         schema.put("requestedBy", "string (optional) - User requesting approval (default: agent-system)");
         schema.put("aiMetadata", "map (optional) - AI response metadata (cost, tokens, etc.)");
+        schema.put("aiGeneratedTestId", "string (optional) - UUID of AIGeneratedTest for test table promotion"); // ✅ NEW
+
         return schema;
     }
 }

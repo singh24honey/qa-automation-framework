@@ -11,6 +11,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -18,10 +19,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    // Spring auto-injects the CorsConfigurationSource bean from CorsConfig
+    private final CorsConfigurationSource corsConfigurationSource;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // Enable CORS using our CorsConfig bean
+                // This must be BEFORE csrf disable so OPTIONS pre-flight passes
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
+
                 // Disable CSRF for stateless API
                 .csrf(AbstractHttpConfigurer::disable)
 
@@ -37,16 +44,26 @@ public class SecurityConfig {
 
                 // Configure authorization
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/actuator/health", "/actuator/info","/apple-touch-icon","/favicon").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**","/h2-console").permitAll()
+                        // Public endpoints - health, swagger, h2-console
+                        .requestMatchers("/actuator/health", "/actuator/info", "/apple-touch-icon", "/favicon").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/h2-console").permitAll()
+
+                        // API key creation is public (used by Login page "Create Key" tab)
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/api-keys").permitAll()
 
-                        // All other endpoints require authentication
+                        // OPTIONS pre-flight must be permitted globally (CORS requirement)
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Static React frontend files served from Spring Boot classpath
+                        // This allows the built React app to be served at / without auth
+                        .requestMatchers("/", "/index.html", "/static/**", "/manifest.json",
+                                "/robots.txt", "/favicon.ico", "/logo*.png").permitAll()
+
+                        // All API endpoints require authentication
                         .anyRequest().authenticated()
                 )
 
-                // Add custom filter
+                // Add custom API key filter
                 .addFilterBefore(apiKeyAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class)
 
@@ -54,7 +71,8 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .contentTypeOptions(contentType -> {})
                         .xssProtection(xss -> {})
-                        .frameOptions(frame -> frame.deny())
+                        // Allow iframes for h2-console (dev only). Deny in prod via Nginx header.
+                        .frameOptions(frame -> frame.sameOrigin())
                 );
 
         return http.build();

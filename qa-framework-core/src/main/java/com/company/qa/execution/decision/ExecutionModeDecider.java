@@ -20,7 +20,7 @@ public class ExecutionModeDecider {
         }
 
         if (framework == TestFramework.PLAYWRIGHT) {
-            return ExecutionMode.DELEGATED;
+            return ExecutionMode.INTERNAL;
         }
 
         // Safe default

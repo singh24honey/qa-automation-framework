@@ -159,6 +159,7 @@ public class PlaywrightFactory {
         options.setAcceptDownloads(properties.isAcceptDownloads());
         options.setIgnoreHTTPSErrors(properties.isIgnoreHttpsErrors());
 
+
         // Create context
         BrowserContext context = browser.newContext(options);
 

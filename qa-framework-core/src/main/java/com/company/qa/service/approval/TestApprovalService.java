@@ -25,6 +25,17 @@ import java.util.List;
  * 3. Approved tests are committed to final folder
  * 4. Rejected tests are marked for regeneration
  */
+/**
+ * Approval service for the pre-agent-era {@code AIGeneratedTest} workflow.
+ *
+ * @deprecated System 1 (pre-agent era). Superseded by
+ *             {@link com.company.qa.service.approval.ApprovalRequestService}
+ *             which handles all agent-generated approvals, Git integration,
+ *             and {@code promoteToTestsTable()} file sync.
+ *             Only called from deprecated {@code AITestGenerationController}.
+ *             Will be removed in a future release.
+ */
+@Deprecated(since = "Phase 2", forRemoval = false)
 @Service
 @Slf4j
 @RequiredArgsConstructor

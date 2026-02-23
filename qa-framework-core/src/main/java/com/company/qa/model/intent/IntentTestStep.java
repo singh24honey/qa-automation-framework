@@ -2,10 +2,17 @@ package com.company.qa.model.intent;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.io.IOException;
 
 /**
  * Single test step within a TestScenario.
@@ -29,6 +36,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonDeserialize(using = IntentTestStep.Deserializer.class)
 public class IntentTestStep {
 
     /**
@@ -90,4 +98,40 @@ public class IntentTestStep {
      */
     @JsonProperty("description")
     private String description;
+
+    /**
+     * Lenient deserializer: sets action=null when AI uses an unknown action type
+     * (e.g. Gherkin keywords like EXAMPLES, BACKGROUND, SCENARIO).
+     *
+     * TestIntentParser filters out steps where action==null after deserialization,
+     * so a single bad step doesn't kill the entire generation.
+     */
+    public static class Deserializer extends StdDeserializer<IntentTestStep> {
+
+        public Deserializer() {
+            super(IntentTestStep.class);
+        }
+
+        @Override
+        public IntentTestStep deserialize(JsonParser p, DeserializationContext ctx) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+
+            String actionStr = node.has("action") ? node.get("action").asText(null) : null;
+            IntentActionType action = IntentActionType.fromStringOrNull(actionStr);
+
+            if (action == null && actionStr != null) {
+                // Log via standard output — Slf4j not available in static context
+                System.out.printf("[WARN] IntentTestStep: unknown action type '%s' — step will be skipped%n",
+                        actionStr);
+            }
+
+            return IntentTestStep.builder()
+                    .action(action)
+                    .locator(node.has("locator")     ? node.get("locator").asText(null)     : null)
+                    .value(node.has("value")         ? node.get("value").asText(null)       : null)
+                    .timeout(node.has("timeout")     ? node.get("timeout").asInt(0)         : null)
+                    .description(node.has("description") ? node.get("description").asText(null) : null)
+                    .build();
+        }
+    }
 }

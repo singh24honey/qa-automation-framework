@@ -11,6 +11,9 @@ import com.company.qa.service.agent.tool.AgentToolRegistry;
 import com.company.qa.service.execution.PlaywrightFactory;
 import com.company.qa.service.execution.PlaywrightTestExecutor;
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
@@ -102,6 +105,9 @@ public class VerifyFixTool implements AgentTool {
             List<Boolean> results = new ArrayList<>();
             List<String> errorMessages = new ArrayList<>();
             StringBuilder pattern = new StringBuilder();
+            int    firstFailedStepIndex   = -1;   // step index of first failure across all runs
+            String firstFailedStepLocator = null; // locator of that step
+            String firstFailedErrorMessage = null; // raw Playwright error (multi-line stack trace)
 
             // PlaywrightFactory.createBrowser() handles all platform-specific args:
             //   - Apple Silicon: --disable-gpu, --no-sandbox
@@ -128,14 +134,30 @@ public class VerifyFixTool implements AgentTool {
                         boolean allStepsPassed = true;
                         String executionId = UUID.randomUUID().toString();
 
-                        for (TestStep step : steps) {
-                            ExecutionResult result = playwrightExecutor.executeStep(
+                        for (int stepIdx = 0; stepIdx < steps.size(); stepIdx++) {
+                            TestStep step = steps.get(stepIdx);
+                            ExecutionResult stepResult = playwrightExecutor.executeStep(
                                     step, page, executionId
                             );
-                            if (!result.isSuccess()) {
+                            if (!stepResult.isSuccess()) {
                                 allStepsPassed = false;
+
+                                // ✅ Record which step failed and its locator
+                                // This is the ground truth — used by ExtractBrokenLocatorTool
+                                // to target the exact broken locator, not guess from JSON order
+                                if (firstFailedStepIndex < 0) {          // only record the first failure
+                                    firstFailedStepIndex = stepIdx;
+                                    firstFailedStepLocator = step.getLocator();
+                                    firstFailedErrorMessage = stepResult.getErrorMessage();
+                                }
+
                                 errorMessages.add(
-                                        String.format("Run %d: %s", i + 1, result.getErrorMessage())
+                                        String.format("Run %d step %d [%s %s]: %s",
+                                                i + 1,
+                                                stepIdx,
+                                                step.getAction(),
+                                                step.getLocator() != null ? step.getLocator() : "—",
+                                                stepResult.getErrorMessage())
                                 );
                                 break;
                             }
@@ -192,6 +214,9 @@ public class VerifyFixTool implements AgentTool {
             result.put("pattern",       pattern.toString());
             result.put("testName",      test.getName());
             result.put("errorMessages", errorMessages);
+            result.put("failedStepIndex",    firstFailedStepIndex >= 0 ? firstFailedStepIndex : null);
+            result.put("failedStepLocator",  firstFailedStepLocator);
+            result.put("failedErrorMessage", firstFailedErrorMessage);
             return result;
 
         } catch (Exception e) {
@@ -220,14 +245,105 @@ public class VerifyFixTool implements AgentTool {
         return schema;
     }
 
-    private List<TestStep> parseTestSteps(String content) throws Exception {
-        if (content.trim().startsWith("{")) {
+    private List<TestStep> parseTestSteps(String rawContent) throws Exception {
+        // Trim leading/trailing whitespace — DB content may have surrounding spaces
+        String content = (rawContent != null) ? rawContent.trim() : "";
+
+        if (content.startsWith("{")) {
             Map<String, Object> contentMap = objectMapper.readValue(content, new TypeReference<>() {});
+
+            // ✅ INTENT_V1 format: {"format":"INTENT_V1", "scenarios":[{"steps":[...]}]}
+            // Extract steps from ALL scenarios and flatten into a single list
+            if ("INTENT_V1".equals(contentMap.get("format"))) {
+                return extractStepsFromIntentV1(contentMap);
+            }
+
+            // Legacy wrapped format: {"steps": [...]}
             if (contentMap.containsKey("steps")) {
                 String stepsJson = objectMapper.writeValueAsString(contentMap.get("steps"));
                 return objectMapper.readValue(stepsJson, new TypeReference<>() {});
             }
         }
+
+        // Legacy flat array: [{action:..., locator:..., value:...}, ...]
         return objectMapper.readValue(content, new TypeReference<>() {});
+    }
+
+    /**
+     * Extract steps from INTENT_V1 JSON, mapping IntentTestStep fields → TestStep fields.
+     * Flattens all scenarios into one ordered list so VerifyFixTool can execute them.
+     *
+     * Note: Each scenario starts fresh (login etc.) — this is intentional.
+     * VerifyFixTool runs the full test flow per execution, not step-by-step.
+     */
+    @SuppressWarnings("unchecked")
+    private List<TestStep> extractStepsFromIntentV1(Map<String, Object> intentMap) {
+        List<TestStep> result = new ArrayList<>();
+        List<Map<String, Object>> scenarios =
+                (List<Map<String, Object>>) intentMap.get("scenarios");
+
+        if (scenarios == null || scenarios.isEmpty()) {
+            log.warn("INTENT_V1 content has no scenarios — nothing to execute");
+            return result;
+        }
+
+        // Use only the FIRST scenario for verification runs to keep execution fast
+        // Running all scenarios would multiply execution time unnecessarily
+        Map<String, Object> firstScenario = scenarios.get(0);
+        List<Map<String, Object>> steps =
+                (List<Map<String, Object>>) firstScenario.get("steps");
+
+        if (steps == null) return result;
+
+        for (Map<String, Object> step : steps) {
+            String action = (String) step.get("action");
+            // Map INTENT_V1 action names → legacy TestStep action names
+            // so PlaywrightExecutor can handle them without changes
+            result.add(TestStep.builder()
+                    .action(mapIntentAction(action))
+                    .locator((String) step.get("locator"))
+                    .value((String) step.get("value"))
+                    .timeout(step.get("timeout") != null
+                            ? ((Number) step.get("timeout")).intValue() : null)
+                    .build());
+        }
+
+        log.info("Extracted {} steps from INTENT_V1 scenario '{}' for verification",
+                result.size(), firstScenario.get("name"));
+        return result;
+    }
+
+    /**
+     * Map INTENT_V1 action type names to the legacy action names
+     * that PlaywrightExecutor understands.
+     */
+    private String mapIntentAction(String intentAction) {
+        if (intentAction == null) return null;
+        return switch (intentAction.toUpperCase()) {
+            case "NAVIGATE"          -> "navigate";
+            case "FILL"              -> "sendKeys";
+            case "CLICK"             -> "click";
+            case "CLICK_ROLE"        -> "click";
+            case "ASSERT_TEXT"       -> "assertText";
+            case "ASSERT_VISIBLE"    -> "assertVisible";
+            case "ASSERT_HIDDEN"     -> "assertHidden";
+            case "ASSERT_URL"        -> "assertUrl";
+            case "ASSERT_TITLE"      -> "assertTitle";
+            case "ASSERT_COUNT"      -> "assertCount";
+            case "ASSERT_VALUE"      -> "assertValue";
+            case "ASSERT_ENABLED"    -> "assertEnabled";
+            case "ASSERT_DISABLED"   -> "assertDisabled";
+            case "WAIT_FOR_LOAD"     -> "waitForLoad";
+            case "WAIT_FOR_SELECTOR" -> "waitForSelector";
+            case "WAIT_FOR_URL"      -> "waitForUrl";
+            case "SELECT_OPTION"     -> "selectOption";
+            case "CHECK"             -> "check";
+            case "UNCHECK"           -> "uncheck";
+            case "PRESS_KEY"         -> "pressKey";
+            case "HOVER"             -> "hover";
+            case "RELOAD"            -> "reload";
+            case "GO_BACK"           -> "goBack";
+            default                  -> intentAction.toLowerCase();
+        };
     }
 }

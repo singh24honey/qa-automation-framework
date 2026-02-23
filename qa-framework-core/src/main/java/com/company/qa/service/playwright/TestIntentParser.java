@@ -79,6 +79,24 @@ public class TestIntentParser {
             return ParseResult.failure("Failed to deserialize TestIntent: " + e.getMessage());
         }
 
+        // Step 2b: Strip any steps where action==null (unknown action type the AI hallucinated,
+        // e.g. Gherkin keywords like EXAMPLES, BACKGROUND). The lenient Deserializer on
+        // IntentTestStep sets action=null instead of throwing — we clean them up here.
+        if (intent.getScenarios() != null) {
+            intent.getScenarios().forEach(scenario -> {
+                if (scenario.getSteps() != null) {
+                    long before = scenario.getSteps().size();
+                    scenario.getSteps().removeIf(step -> step.getAction() == null);
+                    long removed = before - scenario.getSteps().size();
+                    if (removed > 0) {
+                        log.warn("⚠️ Removed {} step(s) with unknown action type from scenario '{}' " +
+                                        "— AI used a Gherkin keyword as an action. Prompt has been updated to prevent this.",
+                                removed, scenario.getName());
+                    }
+                }
+            });
+        }
+
         log.debug("Deserialized TestIntent: className={}, scenarios={}",
                 intent.getTestClassName(), intent.getScenarioCount());
 

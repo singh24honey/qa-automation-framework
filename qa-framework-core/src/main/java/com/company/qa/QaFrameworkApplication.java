@@ -11,7 +11,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableCaching
 @EnableAsync
 @EnableScheduling
-@EnableJpaAuditing
 public class QaFrameworkApplication {
 
     public static void main(String[] args) {

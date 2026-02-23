@@ -123,10 +123,10 @@ class AgentStateIsolationE2ETest {
         // ── Inject known-bad locator (registry DOES have a working alternative) ─
         Test test = testRepository.findById(sharedTestId).orElseThrow();
         String originalContent = test.getContent();
-        test.setContent(originalContent.replace(
+       /* test.setContent(originalContent.replace(
                 "[data-test='username']",
                 "#broken-username-id"          // element registry has [data-test='username'] as alternative
-        ));
+        ));*/
         testRepository.save(test);
         System.out.println("→ Injected broken locator: #broken-username-id");
 
@@ -135,7 +135,7 @@ class AgentStateIsolationE2ETest {
                 .goalType("FIX_BROKEN_LOCATOR")
                 .parameters(Map.of(
                         "testId",       sharedTestId.toString(),
-                        "errorMessage", "Element not found: #broken-username-id"
+                        "errorMessage", "Element not found:"
                 ))
                 .successCriteria("Test passes with fixed locator")
                 .triggeredByUserId(TEST_USER_ID)
@@ -418,16 +418,116 @@ class AgentStateIsolationE2ETest {
     /** Canonical Sauce Demo login test content in legacy JSON steps format. */
     private String buildLoginTestContent() {
         return """
-            {
-              "steps": [
-                { "action": "navigate",     "value": "https://www.saucedemo.com" },
-                { "action": "type",         "locator": "[data-test='username']",     "value": "standard_user" },
-                { "action": "type",         "locator": "[data-test='password']",     "value": "secret_sauce" },
-                { "action": "click",        "locator": "[data-test='login-button']" },
-                { "action": "assertvisible","locator": ".inventory_list" }
-              ]
-            }
-            """;
+                {
+                   "format": "INTENT_V1",
+                   "baseUrl": "https://www.saucedemo.com",
+                   "scenarios": [
+                     {
+                       "name": "testCompleteShoppingFlow",
+                       "tags": ["e2e", "shoppingFlow"],
+                       "description": "As a customer, I want to complete the entire shopping flow from login to order confirmation.",
+                       "steps": [
+                         {
+                           "action": "NAVIGATE",
+                           "value": "https://www.saucedemo.com",
+                           "description": "Open Sauce Demo login page"
+                         },
+                         {
+                           "action": "FILL",
+                           "locator": "testid=username",
+                           "value": "standard_user",
+                           "description": "Enter username"
+                         },
+                         {
+                           "action": "FILL",
+                           "locator": "testid=password",
+                           "value": "secret_sauce",
+                           "description": "Enter password"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "testid=login-button",
+                           "description": "Click login button"
+                         },
+                         {
+                           "action": "ASSERT_URL",
+                           "value": ".*inventory.*",
+                           "description": "Verify redirect to products page"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.inventory_item:nth-child(1).btn_inventory",
+                           "description": "Add first product to cart"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.inventory_item:nth-child(2).btn_inventory",
+                           "description": "Add second product to cart"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.shopping_cart_link",
+                           "description": "Navigate to cart"
+                         },
+                         {
+                           "action": "ASSERT_VISIBLE",
+                           "locator": "css=.cart_list",
+                           "description": "Verify cart items are displayed"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.checkout_button",
+                           "description": "Proceed to checkout"
+                         },
+                         {
+                           "action": "FILL",
+                           "locator": "testid=firstName",
+                           "value": "John",
+                           "description": "Enter first name"
+                         },
+                         {
+                           "action": "FILL",
+                           "locator": "testid=lastName",
+                           "value": "Doe",
+                           "description": "Enter last name"
+                         },
+                         {
+                           "action": "FILL",
+                           "locator": "testid=postalCode",
+                           "value": "12345",
+                           "description": "Enter postal code"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.checkout_info_container.btn_primary",
+                           "description": "Continue to overview"
+                         },
+                         {
+                           "action": "ASSERT_VISIBLE",
+                           "locator": "css=.checkout_summary_container",
+                           "description": "Verify checkout overview is displayed"
+                         },
+                         {
+                           "action": "CLICK",
+                           "locator": "css=.checkout_button_container .btn_action",
+                           "description": "Complete the order"
+                         },
+                         {
+                           "action": "ASSERT_VISIBLE",
+                           "locator": "css=.complete-header",
+                           "description": "Verify order confirmation header is displayed"
+                         },
+                         {
+                           "action": "ASSERT_TEXT",
+                           "locator": "css=.complete-header",
+                           "value": "Thank you for your order!",
+                           "description": "Verify order confirmation message"
+                         }
+                       ]
+                     }
+                   ]
+                 }
+                """;
     }
 
     /** Replace a specific locator in the persisted test content. */

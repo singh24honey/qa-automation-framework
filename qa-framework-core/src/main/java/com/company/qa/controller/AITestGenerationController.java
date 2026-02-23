@@ -21,6 +21,16 @@ import java.util.List;
 /**
  * REST API for AI-powered test generation and approval workflow.
  */
+
+/**
+ * REST controller for the pre-agent-era test generation and approval workflow.
+ *
+ * @deprecated System 1 (pre-agent era). All active workflows use the agent pipeline:
+ *             {@code PlaywrightTestGeneratorAgent} → {@code ApprovalRequestController}.
+ *             Endpoints here bypass the agent entirely and should not be called.
+ *             Kept for backward compatibility. Will be removed in a future release.
+ */
+@Deprecated(since = "Phase 2", forRemoval = false)
 @RestController
 @RequestMapping("/api/v1/ai-tests")
 @Tag(name = "AI Test Generation", description = "AI-powered test generation from JIRA stories")

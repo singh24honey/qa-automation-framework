@@ -79,9 +79,11 @@ public class DiscoverLocatorTool implements AgentTool {
             String brokenLocator = (String) parameters.get("brokenLocator");
             String elementPurpose = (String) parameters.get("elementPurpose");
             String pageName = (String) parameters.get("pageName");
+            String actionType = parameters.get("actionType") == null ? "unknown" : (String) parameters.get("actionType");
+            String stepLocator = parameters.get("stepLocator") == null ? "unknown" : (String) parameters.get("stepLocator");
 
             // Build discovery prompt
-            String prompt = buildDiscoveryPrompt(pageHtml, brokenLocator, elementPurpose, pageName);
+            String prompt = buildDiscoveryPrompt(pageHtml, brokenLocator, elementPurpose, pageName, actionType, stepLocator);
 
             log.info("Asking AI to discover locator for: {} on page: {}", elementPurpose, pageName);
 
@@ -103,36 +105,45 @@ public class DiscoverLocatorTool implements AgentTool {
                 return result;
             }
 
-            // Parse AI response
+            // FIX 1: parseDiscoveryResponse never throws — handles markdown/prose gracefully.
+            // Root cause: when brokenLocator="UNKNOWN", AI ignores JSON format and returns
+            // "### Root Cause Analysis..." — objectMapper.readValue() crashed on '#' char.
             Map<String, Object> discoveryResult = parseDiscoveryResponse(aiResponse.getContent());
 
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> suggestions = (List<Map<String, Object>>)
-                    discoveryResult.get("suggestions")==null?(List<Map<String, Object>>)discoveryResult.get("recommended_fixes"):(List<Map<String, Object>>)discoveryResult.get("suggestions");
+            List<Map<String, Object>> suggestions = discoveryResult.containsKey("suggestions")
+                    ? (List<Map<String, Object>>) discoveryResult.get("suggestions")
+                    : (List<Map<String, Object>>) discoveryResult.get("recommended_fixes");
 
-            if (suggestions == null || suggestions.isEmpty()) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", false);
-                result.put("error", "AI could not suggest any locators");
-                return result;
+            // FIX 2: Never return success=false for empty/null suggestions.
+            // An empty list signals the planner to escalate to manual review.
+            // success=false leaves aiSuggestions=null → planner loops forever on planAiDiscovery().
+            if (suggestions == null) suggestions = List.of();
+
+            if (suggestions.isEmpty()) {
+                log.warn("⚠️ AI returned no usable locator suggestions for brokenLocator='{}'", brokenLocator);
+            } else {
+                log.info("✅ AI discovered {} locator suggestions", suggestions.size());
             }
-
-            log.info("✅ AI discovered {} locator suggestions", suggestions.size());
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
             result.put("suggestions", suggestions);
-            result.put("primarySuggestion", suggestions.get(0));
+            result.put("primarySuggestion", suggestions.isEmpty() ? null : suggestions.get(0));
             result.put("aiReasoning", discoveryResult.get("reasoning"));
             result.put("totalSuggestions", suggestions.size());
 
             return result;
 
         } catch (Exception e) {
-            log.error("❌ AI discovery failed: {}", e.getMessage(), e);
+            log.error("❌ AI discovery failed unexpectedly: {}", e.getMessage(), e);
 
+            // Return success=true with empty list — consistent with the empty-suggestions path above.
+            // Prevents the catch block from returning success=false and causing aiSuggestions=null loop.
             Map<String, Object> result = new HashMap<>();
-            result.put("success", false);
+            result.put("success", true);
+            result.put("suggestions", List.of());
+            result.put("totalSuggestions", 0);
             result.put("error", e.getMessage());
             return result;
         }
@@ -160,7 +171,19 @@ public class DiscoverLocatorTool implements AgentTool {
      * Build AI prompt for locator discovery.
      */
     private String buildDiscoveryPrompt(String html, String brokenLocator,
-                                        String purpose, String pageName) {
+                                        String purpose, String pageName,
+                                        String actionType, String originalLocator) {
+
+        String locatorContext = originalLocator != null
+                ? String.format("ORIGINAL LOCATOR: %s\nBROKEN LOCATOR: %s", originalLocator, brokenLocator)
+                : String.format("BROKEN LOCATOR: %s", brokenLocator);
+
+        String actionContext = actionType != null
+                ? String.format("ACTION TYPE: %s (this element is being %s)",
+                actionType,
+                actionType.equals("CLICK") ? "clicked" :
+                        actionType.equals("ASSERT_TEXT") ? "checked for text content" : "interacted with")
+                : "";
         return """
         You are analyzing a broken test locator and need to suggest alternatives.
         
@@ -229,26 +252,63 @@ public class DiscoverLocatorTool implements AgentTool {
         - Playwright API calls
         - getByRole, getByLabel, getByPlaceholder
         - Any code with parentheses or method calls
-        """.formatted(brokenLocator, purpose, pageName, html);
+        """.formatted(locatorContext, purpose, actionContext, pageName, html);
     }
 
     /**
-     * Parse AI discovery response.
+     * Parse AI discovery response — NEVER throws.
+     *
+     * Strategy order:
+     * 1. Strip markdown fences, parse directly  (happy path: AI returned valid JSON)
+     * 2. Extract first {...} block from prose   (AI added preamble before/after JSON)
+     * 3. Return empty map                       (AI returned pure prose — no JSON at all)
+     *
+     * Root cause this fixes: when brokenLocator="UNKNOWN" / elementPurpose="unknown",
+     * the AI has no meaningful context and ignores the JSON format instruction,
+     * returning a Markdown essay starting with "### Root Cause Analysis...".
+     * The old implementation called objectMapper.readValue() directly which threw
+     * JsonParseException on the '#' character, crashing the whole tool invocation.
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> parseDiscoveryResponse(String response) throws Exception {
-        // Remove markdown code blocks if present
-        String cleaned = response.trim();
-        if (cleaned.startsWith("```json")) {
-            cleaned = cleaned.substring(7);
-        }
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.substring(3);
-        }
-        if (cleaned.endsWith("```")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 3);
+    private Map<String, Object> parseDiscoveryResponse(String response) {
+        if (response == null || response.isBlank()) {
+            log.warn("⚠️ AI returned empty response for locator discovery");
+            return Map.of();
         }
 
-        return objectMapper.readValue(cleaned.trim(), Map.class);
+        // Strategy 1: strip markdown fences and try direct parse
+        String cleaned = stripMarkdownFences(response);
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(cleaned, Map.class);
+            if (parsed.containsKey("suggestions") || parsed.containsKey("recommended_fixes")) {
+                return parsed;
+            }
+        } catch (Exception ignored) {}
+
+        // Strategy 2: find first {...} JSON block embedded in prose
+        int firstBrace = response.indexOf('{');
+        int lastBrace  = response.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            String extracted = response.substring(firstBrace, lastBrace + 1);
+            try {
+                Map<String, Object> parsed = objectMapper.readValue(extracted, Map.class);
+                if (parsed.containsKey("suggestions") || parsed.containsKey("recommended_fixes")) {
+                    log.info("✅ Extracted JSON block from prose AI response");
+                    return parsed;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // Strategy 3: pure prose — no JSON extractable
+        log.warn("⚠️ AI response is prose (not JSON) — no locators extractable. Agent will escalate to manual review.");
+        return Map.of();
+    }
+
+    private String stripMarkdownFences(String text) {
+        String s = text.trim();
+        if (s.startsWith("```json")) s = s.substring(7);
+        else if (s.startsWith("```"))  s = s.substring(3);
+        if (s.endsWith("```")) s = s.substring(0, s.length() - 3);
+        return s.trim();
     }
 }

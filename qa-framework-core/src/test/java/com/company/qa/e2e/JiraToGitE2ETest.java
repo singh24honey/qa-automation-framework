@@ -166,7 +166,7 @@ class JiraToGitE2ETest {
                 .skipGitCommit(false)  // ✅ DO NOT SKIP GIT
                 .build();
 
-        ApprovalRequestDTO approved = approvalService.approve(approvalRequestId1, decision);
+        ApprovalRequestDTO approved = approvalService.approveRequest(approvalRequestId1, decision);
 
         log.info("✅ Test Approved with Auto-Commit");
         log.info("   Status: {}", approved.getStatus());
@@ -267,7 +267,7 @@ class JiraToGitE2ETest {
                 .skipGitCommit(true)  // ✅ SKIP GIT COMMIT
                 .build();
 
-        ApprovalRequestDTO approved = approvalService.approve(approvalRequestId2, decision);
+        ApprovalRequestDTO approved = approvalService.approveRequest(approvalRequestId2, decision);
 
         log.info("✅ Test Approved with Git Skipped");
         log.info("   Status: {}", approved.getStatus());

@@ -225,7 +225,18 @@ public class PlaywrightContextBuilder {
         instructions.append("6. Set scenario 'name' to a valid Java method name (camelCase, no spaces)\n");
         instructions.append("7. Use 'description' fields for human-readable step explanations\n");
         instructions.append("8. Include both positive and negative test scenarios\n\n");
-       // instructions.append("5. Set testClassName to exactly: " + generateClassName(jiraKey) + " (derived from JIRA key)\n");
+
+        // ✅ FIXED: Actually print the supported actions list the prompt refers to
+        instructions.append("=== Supported Actions (use EXACT names) ===\n");
+        instructions.append("Navigation : NAVIGATE, RELOAD, GO_BACK\n");
+        instructions.append("Input      : FILL, CLEAR, SELECT_OPTION, CHECK, UNCHECK, PRESS_KEY\n");
+        instructions.append("Interaction: CLICK, CLICK_ROLE, HOVER\n");
+        instructions.append("Wait       : WAIT_FOR_LOAD, WAIT_FOR_SELECTOR, WAIT_FOR_URL\n");
+        instructions.append("Assert     : ASSERT_TEXT, ASSERT_VISIBLE, ASSERT_HIDDEN, ASSERT_URL,\n");
+        instructions.append("             ASSERT_TITLE, ASSERT_COUNT, ASSERT_VALUE, ASSERT_ENABLED, ASSERT_DISABLED\n");
+        instructions.append("\n");
+        instructions.append("⚠️  DO NOT use: EXAMPLES, SCENARIO, BACKGROUND, FEATURE, OR, AND, GIVEN, WHEN, THEN\n");
+        instructions.append("   These are Gherkin keywords — they are NOT valid action types.\n\n");
 
         instructions.append("❌ DO NOT:\n");
         instructions.append("1. Write any Java code — the renderer handles all code generation\n");
@@ -284,17 +295,17 @@ public class PlaywrightContextBuilder {
 
         }
 
-       if(!isSauceDemoStory(story)) { // 3. Element Registry Context (NEW - Week 13)
-           List<String> relevantPages = extractRelevantPages(story);
-           String elementContext = elementRegistryService.getContextForAIPrompt(relevantPages);
-           context.append(elementContext);
-           context.append("\n");
+        if(!isSauceDemoStory(story)) { // 3. Element Registry Context (NEW - Week 13)
+            List<String> relevantPages = extractRelevantPages(story);
+            String elementContext = elementRegistryService.getContextForAIPrompt(relevantPages);
+            context.append(elementContext);
+            context.append("\n");
 
-           // 4. Page Object Registry Context (NEW - Week 13)
-           String pageObjectContext = pageObjectRegistryService.getContextForAIPrompt();
-           context.append(pageObjectContext);
-           context.append("\n");
-       }
+            // 4. Page Object Registry Context (NEW - Week 13)
+            String pageObjectContext = pageObjectRegistryService.getContextForAIPrompt();
+            context.append(pageObjectContext);
+            context.append("\n");
+        }
         // 5a. Framework Capabilities (intent mode only — tells AI the exact JSON schema)
         if (intentEnabled) {
             context.append("=== Zero-Hallucination Pipeline: Framework Constraints ===\n");
@@ -1045,7 +1056,7 @@ CRITICAL:
                 story.getDescription()).toLowerCase();
         return content.contains("sauce") ||
                 content.contains("saucedemo") ;
-                //story.getLabels() != null && story.getLabels().contains("sauce-demo");
+        //story.getLabels() != null && story.getLabels().contains("sauce-demo");
     }
 
     /**

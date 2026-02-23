@@ -210,6 +210,25 @@ public enum IntentActionType {
         }
     }
 
+    /**
+     * Lenient parse: returns null for unknown action types instead of throwing.
+     *
+     * Used by TestIntentParser when filtering steps — an unknown action type
+     * (e.g. Gherkin keywords like EXAMPLES, BACKGROUND that the AI hallucinated)
+     * causes the step to be skipped rather than failing the entire generation.
+     *
+     * @param value action type string from AI JSON
+     * @return IntentActionType, or null if unrecognised
+     */
+    public static IntentActionType fromStringOrNull(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            return valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     // ========== Static Helpers ==========
 
     /** All assertion action types. */

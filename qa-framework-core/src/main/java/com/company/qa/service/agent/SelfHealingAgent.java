@@ -10,10 +10,12 @@ import com.company.qa.service.ai.AIBudgetService;
 import com.company.qa.service.ai.AIGatewayService;
 import com.company.qa.service.approval.ApprovalRequestService;
 import com.company.qa.service.audit.AuditLogService;
+import com.company.qa.service.playwright.PlaywrightJavaRenderer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import com.company.qa.service.draft.DraftFileService;
 
 import java.util.*;
 
@@ -45,6 +47,8 @@ public class SelfHealingAgent extends BaseAgent {
     private final ObjectMapper objectMapper;
     private final AgentOrchestrator orchestrator;
 
+    private final DraftFileService draftFileService;
+    private final PlaywrightJavaRenderer playwrightJavaRenderer;
     // ── NO instance state fields ───────────────────────────────────────────────
     // All per-execution state lives in AgentContext.state via State keys below.
 
@@ -57,12 +61,14 @@ public class SelfHealingAgent extends BaseAgent {
             AgentToolRegistry toolRegistry,
             TestRepository testRepository,
             ObjectMapper objectMapper,
-            AgentOrchestrator orchestrator) {
+            AgentOrchestrator orchestrator, DraftFileService draftFileService, PlaywrightJavaRenderer playwrightJavaRenderer) {
 
         super(aiGateway, auditService, approvalService, budgetService, memoryService, toolRegistry);
         this.testRepository = testRepository;
         this.objectMapper = objectMapper;
         this.orchestrator = orchestrator;
+        this.draftFileService = draftFileService;
+        this.playwrightJavaRenderer = playwrightJavaRenderer;
     }
 
     @PostConstruct
@@ -184,6 +190,9 @@ public class SelfHealingAgent extends BaseAgent {
         }
 
         if (!hasUpdatedRegistry) return planUpdateRegistry(context, test);
+        boolean hasRenderedFile = Boolean.TRUE.equals(
+                context.getState(State.HAS_RENDERED_FILE, Boolean.class));
+        if (!hasRenderedFile)                  return planRenderAndWriteFile(context, test);
         if (!hasCreatedBranch)   return planCreateBranch(context, test);
         if (!hasCommitted)       return planCommitChanges(context, test);
         if (!hasCreatedApproval) return planCreateApproval(context, test);
@@ -191,6 +200,25 @@ public class SelfHealingAgent extends BaseAgent {
 
         moveToNextTest(context);
         return plan(context);
+    }
+
+    /**
+     * Render the fixed intent JSON to a .java file and save it to the drafts folder.
+     * This must happen before CREATE_BRANCH so the commit tool has a real file to reference.
+     */
+    private AgentPlan planRenderAndWriteFile(AgentContext context, Test test) {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("testId",       test.getId().toString());
+        parameters.put("testClassName",     test.getName());
+        parameters.put("testCode",  test.getContent()); // fixed intent JSON from DB
+
+        return AgentPlan.builder()
+                .nextAction(AgentActionType.WRITE_FILE)
+                .actionParameters(parameters)
+                .reasoning("Rendering fixed intent JSON to .java draft file before Git commit")
+                .confidence(1.0)
+                .requiresApproval(false)
+                .build();
     }
 
     // =========================================================================
@@ -224,6 +252,14 @@ public class SelfHealingAgent extends BaseAgent {
                 // Always advance state for this tool so the planner doesn't loop
                 log.warn("⚠️ EXTRACT_BROKEN_LOCATOR returned success=false — updating state anyway");
                 updateStateFromActionResult(actionType, result, context);
+            } else if (actionType == AgentActionType.DISCOVER_LOCATOR) {
+                // FIX 3: DISCOVER_LOCATOR returned success=false (should be rare after Fix 1+2,
+                // but guard here as a safety net). Force aiSuggestions=[] so the planner
+                // hits the aiSuggestions.isEmpty() branch and escalates to manual review
+                // instead of looping forever on planAiDiscovery() (aiSuggestions==null → retry).
+                log.warn("⚠️ DISCOVER_LOCATOR failed — forcing aiSuggestions=[] to break retry loop");
+                setAiSuggestions(context, List.of());
+                setAiSuggestionIdx(context, 0);
             }
 
             return ActionResult.builder()
@@ -286,8 +322,23 @@ public class SelfHealingAgent extends BaseAgent {
             log.info("No test ID provided in goal parameters");
         }
 
+        String errorMessage = (String) goalParams.get("errorMessage");
+        if ((errorMessage == null || errorMessage.isBlank()) && !testIds.isEmpty()) {
+            try {
+                Test test = testRepository.findById(UUID.fromString(testIds.get(0))).orElse(null);
+                if (test != null && test.getLastExecutionError() != null) {
+                    errorMessage = test.getLastExecutionError();
+                    log.info("Loaded lastExecutionError from DB for test {} — length: {}",
+                            testIds.get(0), errorMessage.length());
+                }
+            } catch (Exception e) {
+                log.warn("Could not load lastExecutionError from DB: {}", e.getMessage());
+            }
+        }
+
         context.putState(State.TESTS_TO_FIX,             testIds);
         context.putState(State.CURRENT_TEST_INDEX,        0);
+        context.putState("errorMessage",                  errorMessage);  // available to planExtractBrokenLocator
         context.putState(State.CURRENT_FAILURE_ANALYSIS,  new HashMap<>());
         context.putState(State.AVAILABLE_ALTERNATIVES,    null);
         context.putState(State.CURRENT_ALT_INDEX,         0);
@@ -304,12 +355,12 @@ public class SelfHealingAgent extends BaseAgent {
     // =========================================================================
 
     private AgentPlan planExtractBrokenLocator(AgentContext context, Test test) {
-        Map<String, Object> goalParams = context.getGoal().getParameters();
-        String errorMessage = (String) goalParams.getOrDefault("errorMessage", "Element not found");
+        String errorMessage = context.getState("errorMessage", String.class);
+        if (errorMessage == null) errorMessage = "Element not found";
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("errorMessage", errorMessage);
-        parameters.put("testContent", test.getContent());
+        parameters.put("testContent",  test.getContent());
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.EXTRACT_BROKEN_LOCATOR)
@@ -392,12 +443,10 @@ public class SelfHealingAgent extends BaseAgent {
         String elementName;
 
         if (alternatives != null && !alternatives.isEmpty() && altIndex < alternatives.size()) {
-            // Registry alternative worked
             Map<String, Object> alt = alternatives.get(altIndex);
             workingLocator = (String) alt.get("locator");
             elementName    = (String) alt.get("elementName");
         } else if (aiSuggestions != null && !aiSuggestions.isEmpty() && aiIdx < aiSuggestions.size()) {
-            // AI suggestion worked
             Map<String, Object> suggestion = aiSuggestions.get(aiIdx);
             workingLocator = (String) suggestion.get("locator");
             elementName    = "AI-discovered-element-" + System.currentTimeMillis();
@@ -448,16 +497,22 @@ public class SelfHealingAgent extends BaseAgent {
             branchName = "fix/locator-" + test.getName().replaceAll("[^a-zA-Z0-9]", "-");
         }
 
+        String renderedFilePath = context.getState(State.RENDERED_FILE_PATH, String.class);
+        if (renderedFilePath == null) {
+            log.warn("⚠️ No rendered file path in state — using fallback path");
+            renderedFilePath = "drafts/" + test.getName() + ".java";
+        }
+
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("storyKey", "LOCATOR-" + test.getId().toString().substring(0, 8));
-        parameters.put("branchName", branchName);
-        parameters.put("commitMessage", String.format("Fix broken locator in test: %s", test.getName()));
-        parameters.put("filePaths", List.of("tests/" + test.getName() + ".java"));
+        parameters.put("storyKey",      "LOCATOR-" + test.getId().toString().substring(0, 8));
+        parameters.put("branchName",    branchName);
+        parameters.put("commitMessage", "Fix broken locator in test: " + test.getName());
+        parameters.put("filePaths",     List.of(renderedFilePath));
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.COMMIT_CHANGES)
                 .actionParameters(parameters)
-                .reasoning("Committing locator fix")
+                .reasoning("Committing rendered .java file with locator fix")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();
@@ -465,15 +520,16 @@ public class SelfHealingAgent extends BaseAgent {
 
     private AgentPlan planCreateApproval(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("testCode", test.getContent());
-        parameters.put("jiraKey", "LOCATOR-" + test.getId().toString().substring(0, 8));
-        parameters.put("testName", test.getName());
+        parameters.put("testCode",    test.getContent());
+        parameters.put("jiraKey",     "LOCATOR-" + test.getId().toString().substring(0, 8));
+        parameters.put("testName",    test.getName());
         parameters.put("requestedBy", "SelfHealingAgent");
+        parameters.put("requestType", "SELF_HEALING_FIX");
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)
                 .actionParameters(parameters)
-                .reasoning("Creating approval request for locator fix")
+                .reasoning("Locator fix verified — creating approval request for file promotion")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();
@@ -481,15 +537,16 @@ public class SelfHealingAgent extends BaseAgent {
 
     private AgentPlan planCreateApprovalForManualReview(AgentContext context, Test test) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("testCode", test.getContent());
-        parameters.put("jiraKey", "LOCATOR-MANUAL-" + test.getId().toString().substring(0, 8));
-        parameters.put("testName", test.getName() + " [NEEDS MANUAL REVIEW]");
+        parameters.put("testCode",    test.getContent());
+        parameters.put("jiraKey",     "LOCATOR-MANUAL-" + test.getId().toString().substring(0, 8));
+        parameters.put("testName",    test.getName() + " [NEEDS MANUAL REVIEW]");
         parameters.put("requestedBy", "SelfHealingAgent");
+        parameters.put("requestType", "SELF_HEALING_MANUAL");
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)
                 .actionParameters(parameters)
-                .reasoning("No working alternatives found - flagging for manual review")
+                .reasoning("No working alternatives found — flagging for manual review")
                 .confidence(1.0)
                 .requiresApproval(false)
                 .build();
@@ -537,7 +594,11 @@ public class SelfHealingAgent extends BaseAgent {
         parameters.put("brokenLocator",   analysis.get("brokenLocator"));
         parameters.put("elementPurpose",  analysis.get("elementPurpose"));
         parameters.put("pageName",        analysis.get("pageName"));
-
+        parameters.put("actionType",      analysis.get("actionType"));
+        String failedStepLocator = context.getWorkProduct("failedStepLocator", String.class);
+        if (failedStepLocator != null) {
+            parameters.put("originalLocator", failedStepLocator);
+        }
         return AgentPlan.builder()
                 .nextAction(AgentActionType.DISCOVER_LOCATOR)
                 .actionParameters(parameters)
@@ -615,17 +676,41 @@ public class SelfHealingAgent extends BaseAgent {
                     log.info("AI discovered {} locator suggestions", suggestions.size());
                 }
             }
+            case WRITE_FILE -> {
+                String filePath = (String) result.get("filePath");
+                if (filePath != null) {
+                    context.putState(State.RENDERED_FILE_PATH, filePath);
+                    context.putState(State.HAS_RENDERED_FILE, true);
+                    log.info("✅ Rendered .java file saved to: {}", filePath);
+                } else {
+                    log.error("❌ WRITE_FILE succeeded but returned no filePath");
+                    context.putState(State.HAS_RENDERED_FILE, true);
+                }
+            }
 
             case EXECUTE_TEST -> {
                 boolean stable = (boolean) result.getOrDefault("isStable", false);
                 setFixVerified(context, stable);
+
+                Object failedIdx = result.get("failedStepIndex");
+                if (failedIdx != null) {
+                    context.putWorkProduct("failedStepIndex", failedIdx);
+                }
+                String failedLocator = (String) result.get("failedStepLocator");
+                if (failedLocator != null) {
+                    context.putWorkProduct("failedStepLocator", failedLocator);
+                }
+                String failedError = (String) result.get("failedErrorMessage");
+                if (failedError != null) {
+                    context.putWorkProduct("failedErrorMessage", failedError);
+                }
 
                 if (stable) {
                     setSuccessfullyFixed(context, getSuccessfullyFixed(context) + 1);
                     log.info("✅ Fix verified! Successfully fixed {}/{} tests",
                             getSuccessfullyFixed(context), getTestIds(context).size());
                 } else {
-                    List<Map<String, Object>> alts  = getAlternatives(context);
+                    List<Map<String, Object>> alts   = getAlternatives(context);
                     List<Map<String, Object>> aiSugg = getAiSuggestions(context);
 
                     if (alts != null && !alts.isEmpty() && getAltIndex(context) < alts.size()) {
@@ -679,6 +764,8 @@ public class SelfHealingAgent extends BaseAgent {
         setFixVerified(context, false);
         setOriginalContent(context, null);
         setLastAppliedFix(context, null);
+        context.putState(State.RENDERED_FILE_PATH, null);
+        context.putState(State.HAS_RENDERED_FILE, false);
         context.putState("currentTestStartIteration", context.getCurrentIteration());
     }
 
@@ -714,10 +801,11 @@ public class SelfHealingAgent extends BaseAgent {
     // HELPERS
     // =========================================================================
 
+    @SuppressWarnings("unchecked")
     private String buildFixedTestCode(String originalContent, String newLocator,
                                       AgentContext context) {
         if (!isValidSelectorString(newLocator)) {
-            log.error("❌ Invalid locator format: {} (looks like Java code, not a selector)", newLocator);
+            log.error("❌ Invalid locator format: {} (looks like Java code)", newLocator);
             return originalContent;
         }
 
@@ -728,25 +816,79 @@ public class SelfHealingAgent extends BaseAgent {
         }
 
         try {
-            @SuppressWarnings("unchecked")
             Map<String, Object> contentMap = objectMapper.readValue(originalContent, Map.class);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> steps = (List<Map<String, Object>>) contentMap.get("steps");
+            boolean replaced = false;
 
-            if (steps != null) {
-                for (Map<String, Object> step : steps) {
-                    String locator = (String) step.get("locator");
-                    if (locator != null && locator.equals(brokenLocator)) {
-                        step.put("locator", newLocator);
-                        log.info("  Replaced: {} → {}", brokenLocator, newLocator);
+            List<Map<String, Object>> scenarios =
+                    (List<Map<String, Object>>) contentMap.get("scenarios");
+
+            if (scenarios != null) {
+                for (Map<String, Object> scenario : scenarios) {
+                    List<Map<String, Object>> steps =
+                            (List<Map<String, Object>>) scenario.get("steps");
+                    if (steps == null) continue;
+
+                    for (Map<String, Object> step : steps) {
+                        String locator = (String) step.get("locator");
+                        if (locator != null && locatorsMatch(locator, brokenLocator)) {
+                            step.put("locator", newLocator);
+                            log.info("  ✅ Replaced: {} → {}", brokenLocator, newLocator);
+                            replaced = true;
+                        }
                     }
                 }
             }
+
+            if (!replaced) {
+                List<Map<String, Object>> steps =
+                        (List<Map<String, Object>>) contentMap.get("steps");
+                if (steps != null) {
+                    for (Map<String, Object> step : steps) {
+                        String locator = (String) step.get("locator");
+                        if (locator != null && locatorsMatch(locator, brokenLocator)) {
+                            step.put("locator", newLocator);
+                            log.info("  ✅ Replaced: {} → {}", brokenLocator, newLocator);
+                            replaced = true;
+                        }
+                    }
+                }
+            }
+
+            if (!replaced) {
+                log.warn("⚠️ brokenLocator '{}' not found in any step — content unchanged", brokenLocator);
+                return originalContent;
+            }
+
             return objectMapper.writeValueAsString(contentMap);
+
         } catch (Exception e) {
             log.error("Failed to build fixed test code: {}", e.getMessage(), e);
             return originalContent;
         }
+    }
+
+    private boolean locatorsMatch(String stored, String extracted) {
+        if (stored == null || extracted == null) return false;
+        if (stored.equals(extracted)) return true;
+
+        String normalizedStored    = stripLocatorPrefix(stored);
+        String normalizedExtracted = stripLocatorPrefix(extracted);
+
+        return normalizedStored.equals(normalizedExtracted);
+    }
+
+    private String stripLocatorPrefix(String locator) {
+        if (locator == null) return "";
+        int eq = locator.indexOf('=');
+        if (eq > 0 && eq < 12) {
+            String prefix = locator.substring(0, eq).toLowerCase();
+            Set<String> KNOWN_PREFIXES = Set.of("css", "xpath", "testid", "role",
+                    "text", "id", "name", "class", "label", "placeholder");
+            if (KNOWN_PREFIXES.contains(prefix)) {
+                return locator.substring(eq + 1);
+            }
+        }
+        return locator;
     }
 
     private boolean isValidSelectorString(String locator) {
@@ -770,30 +912,76 @@ public class SelfHealingAgent extends BaseAgent {
                 || locator.matches("^[a-zA-Z][a-zA-Z0-9-]*\\[.+\\]$");
     }
 
+    @SuppressWarnings("unchecked")
     private String inferPageUrl(AgentContext context, Test test) {
+
         Object pageUrlGoal = context.getGoal().getParameters().get("pageUrl");
-        if (pageUrlGoal instanceof String s) return s;
+        if (pageUrlGoal instanceof String s && !s.isBlank()) return s;
 
         try {
-            @SuppressWarnings("unchecked")
             Map<String, Object> contentMap = objectMapper.readValue(test.getContent(), Map.class);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> steps = (List<Map<String, Object>>) contentMap.get("steps");
-            if (steps != null) {
-                for (Map<String, Object> step : steps) {
-                    if ("navigate".equals(step.get("action"))) {
-                        return (String) step.get("value");
+
+            List<Map<String, Object>> scenarios =
+                    (List<Map<String, Object>>) contentMap.get("scenarios");
+
+            if (scenarios != null && !scenarios.isEmpty()) {
+                List<Map<String, Object>> steps =
+                        (List<Map<String, Object>>) scenarios.get(0).get("steps");
+
+                if (steps != null && !steps.isEmpty()) {
+                    Integer failedIdx = context.getWorkProduct("failedStepIndex", Integer.class);
+
+                    if (failedIdx != null && failedIdx > 0) {
+                        for (int i = Math.min(failedIdx, steps.size() - 1); i >= 0; i--) {
+                            Map<String, Object> step = steps.get(i);
+                            if ("NAVIGATE".equalsIgnoreCase((String) step.get("action"))) {
+                                String url = (String) step.get("value");
+                                if (url != null && !url.isBlank()) {
+                                    log.info("inferPageUrl: NAVIGATE before failing step {} → {}", failedIdx, url);
+                                    return url;
+                                }
+                            }
+                        }
+                    }
+
+                    for (Map<String, Object> step : steps) {
+                        if ("NAVIGATE".equalsIgnoreCase((String) step.get("action"))) {
+                            String url = (String) step.get("value");
+                            if (url != null && !url.isBlank()) {
+                                log.info("inferPageUrl: using first NAVIGATE step → {}", url);
+                                return url;
+                            }
+                        }
                     }
                 }
             }
+
+            String baseUrl = (String) contentMap.get("baseUrl");
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                log.info("inferPageUrl: using INTENT_V1 baseUrl → {}", baseUrl);
+                return baseUrl;
+            }
+
+            List<Map<String, Object>> legacySteps =
+                    (List<Map<String, Object>>) contentMap.get("steps");
+            if (legacySteps != null) {
+                for (Map<String, Object> step : legacySteps) {
+                    if ("navigate".equalsIgnoreCase((String) step.get("action"))) {
+                        String url = (String) step.get("value");
+                        if (url != null && !url.isBlank()) return url;
+                    }
+                }
+            }
+
         } catch (Exception e) {
-            log.warn("Could not extract URL from test content");
+            log.warn("Could not extract URL from test content: {}", e.getMessage());
         }
+
         return "https://www.saucedemo.com";
     }
 
     // =========================================================================
-    // CONTEXT ACCESSOR HELPERS  — typed get/set wrappers around AgentContext.state
+    // CONTEXT ACCESSOR HELPERS
     // =========================================================================
 
     @SuppressWarnings("unchecked")
@@ -907,5 +1095,7 @@ public class SelfHealingAgent extends BaseAgent {
         String ORIGINAL_CONTENT           = "heal.originalTestContent";
         String LAST_APPLIED_FIX           = "heal.lastAppliedFix";
         String SUCCESSFULLY_FIXED_COUNT   = "heal.successfullyFixedCount";
+        String RENDERED_FILE_PATH         = "heal.renderedFilePath";
+        String HAS_RENDERED_FILE          = "heal.hasRenderedFile";
     }
 }

@@ -6,11 +6,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Persistent storage of failure patterns
@@ -58,7 +58,8 @@ public class TestFailurePattern {
 
     @Column(name = "affected_browsers", columnDefinition = "TEXT")
     @Convert(converter = StringListConverter.class)
-    private String[] affectedBrowsers;
+    @Builder.Default
+    private List<String> affectedBrowsers = new ArrayList<>();
 
     @Column(name = "impact_score", nullable = false, precision = 5, scale = 2)
     @Builder.Default

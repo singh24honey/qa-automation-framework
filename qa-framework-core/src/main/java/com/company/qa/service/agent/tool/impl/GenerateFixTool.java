@@ -15,9 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Agent tool to generate fixes for flaky tests based on root cause.
@@ -158,59 +156,59 @@ public class GenerateFixTool implements AgentTool {
         String strategyGuidance = getStrategyGuidance(rootCause, attemptNumber);
 
         return String.format("""
-            You are a QA automation expert fixing a flaky test.
-            
-            TEST INFORMATION:
-            - Test Name: %s
-            - Root Cause: %s
-            - Flakiness Pattern: %s
-            - Failed Runs: %d/%d
-            - This is fix attempt #%d
-            
-            CURRENT TEST CODE:
-```json
-            %s
-```
-            
-            FAILURE MESSAGES:
-            %s
-            
-            FIX STRATEGY GUIDANCE:
-            %s
-            
-            TASK:
-            Generate a fixed version of the test code that addresses the %s issue.
-            
-            REQUIREMENTS:
-            1. Maintain the same JSON structure: {"steps": [...]}
-            2. Each step must have: action, locator (if applicable), value (if applicable)
-            3. Add appropriate waits, retries, or improved locators based on root cause
-            4. If attempt #%d, try a DIFFERENT strategy than previous attempts
-            5. Keep changes minimal - only fix what's needed
-            
-            CRITICAL - SUPPORTED ACTIONS ONLY (use EXACTLY these names):
-            - navigate: {"action": "navigate", "value": "https://url"}
-            - type: {"action": "type", "locator": "css=[data-test='field']", "value": "text"}
-            - click: {"action": "click", "locator": "css=button#submit"}
-            - wait: {"action": "wait", "locator": "css=.element", "timeout": 5} OR {"action": "wait", "value": "3000"} for sleep
-            - waitForLoadState: {"action": "waitForLoadState"} waits for page load
-            - assertvisible: {"action": "assertvisible", "locator": "css=.element"}
-            - asserttext: {"action": "asserttext", "locator": "css=.el", "value": "expected"}
-            - select: {"action": "select", "locator": "css=select", "value": "option"}
-            - check / uncheck: for checkboxes
-            
-            DO NOT use: waitForPageLoad, waitForNetworkIdle, login, checkNotNull, or any other action names.
-            For locators, use CSS format: css=[data-test='x'], css=#id, css=.class, or role=button[name='Submit']
-            
-            RESPONSE FORMAT (JSON only, no markdown):
-            {
-              "fixedTestCode": "...complete JSON with {"steps": [...]}...",
-              "fixStrategy": "Brief description of what was changed and why",
-              "confidence": 0.85
-            }
-            
-            Return ONLY the JSON object, no additional text or code blocks.
-            """,
+                                    You are a QA automation expert fixing a flaky test.
+                                    
+                                    TEST INFORMATION:
+                                    - Test Name: %s
+                                    - Root Cause: %s
+                                    - Flakiness Pattern: %s
+                                    - Failed Runs: %d/%d
+                                    - This is fix attempt #%d
+                                    
+                                    CURRENT TEST CODE:
+                        ```json
+                                    %s
+                        ```
+                                    
+                                    FAILURE MESSAGES:
+                                    %s
+                                    
+                                    FIX STRATEGY GUIDANCE:
+                                    %s
+                                    
+                                    TASK:
+                                    Generate a fixed version of the test code that addresses the %s issue.
+                                    
+                                    REQUIREMENTS:
+                                    1. Maintain the same JSON structure: {"steps": [...]}
+                                    2. Each step must have: action, locator (if applicable), value (if applicable)
+                                    3. Add appropriate waits, retries, or improved locators based on root cause
+                                    4. If attempt #%d, try a DIFFERENT strategy than previous attempts
+                                    5. Keep changes minimal - only fix what's needed
+                                    
+                                    CRITICAL - SUPPORTED ACTIONS ONLY (use EXACTLY these names):
+                                    - navigate: {"action": "navigate", "value": "https://url"}
+                                    - type: {"action": "type", "locator": "css=[data-test='field']", "value": "text"}
+                                    - click: {"action": "click", "locator": "css=button#submit"}
+                                    - wait: {"action": "wait", "locator": "css=.element", "timeout": 5} OR {"action": "wait", "value": "3000"} for sleep
+                                    - waitForLoadState: {"action": "waitForLoadState"} waits for page load
+                                    - assertvisible: {"action": "assertvisible", "locator": "css=.element"}
+                                    - asserttext: {"action": "asserttext", "locator": "css=.el", "value": "expected"}
+                                    - select: {"action": "select", "locator": "css=select", "value": "option"}
+                                    - check / uncheck: for checkboxes
+                                    
+                                    DO NOT use: waitForPageLoad, waitForNetworkIdle, login, checkNotNull, or any other action names.
+                                    For locators, use CSS format: css=[data-test='x'], css=#id, css=.class, or role=button[name='Submit']
+                                    
+                                    RESPONSE FORMAT (JSON only, no markdown):
+                                    {
+                                      "fixedTestCode": "...complete JSON with {"steps": [...]}...",
+                                      "fixStrategy": "Brief description of what was changed and why",
+                                      "confidence": 0.85
+                                    }
+                                    
+                                    Return ONLY the JSON object, no additional text or code blocks.
+                                    """,
                 result.getTestName(),
                 rootCause.name(),
                 result.getPattern(),
@@ -241,99 +239,104 @@ public class GenerateFixTool implements AgentTool {
     private String getTimingFixStrategies(int attempt) {
         return switch (attempt) {
             case 1 -> """
-                ATTEMPT 1 - Add explicit waits:
-                - Add wait steps before flaky actions: {"action": "wait", "locator": "css=.element", "timeout": 5000}
-                - Use waitForLoadState after navigation
-                - Increase timeout values on existing wait steps
-                """;
+            ATTEMPT 1 — Add a wait ONLY before the step that failed:
+            - Read FAILURE MESSAGES above to find WHICH step failed
+              (e.g. "Run 2: Element not found: css=.inventory_list")
+            - Insert ONE wait immediately before that specific failing step ONLY
+            - Format: {"action": "wait", "locator": "css=.element", "timeout": 5000}
+            - Do NOT add waits before steps that already have a wait before them
+            - Do NOT pair a wait AND assertvisible on the same locator — use assertvisible only
+            - Do NOT change any other steps
+            """;
             case 2 -> """
-                ATTEMPT 2 - Add retry logic:
-                - Wrap flaky steps in retry loops (not directly supported in JSON, but add multiple wait attempts)
-                - Add wait for network idle: {"action": "wait", "locator": "networkidle", "timeout": 10000}
-                - Double all timeout values
-                """;
+            ATTEMPT 2 — Add waitForLoadState after every navigate step:
+            - Insert {"action": "waitForLoadState"} immediately after each navigate step
+            - Also increase the timeout from Attempt 1 from 5000 to 10000
+            - No other changes
+            """;
             default -> """
-                ATTEMPT 3 - Maximum stability:
-                - Add wait before AND after flaky steps
-                - Use longest reasonable timeouts (10-15 seconds)
-                - Add sleep/delay steps if needed: {"action": "wait", "value": 3000}
-                """;
+            ATTEMPT 3 — Maximum stability, still targeted:
+            - Add {"action": "wait", "value": "2000"} (2s sleep) before the failing step
+            - Set all existing timeout values to 15000
+            - Add waitForLoadState after every navigate step if not already present
+            - Keep all other steps unchanged
+            """;
         };
     }
 
     private String getDataFixStrategies(int attempt) {
         return switch (attempt) {
             case 1 -> """
-                ATTEMPT 1 - Add unique identifiers:
-                - Append timestamp or random numbers to test data values
-                - Example: Instead of "value": "testuser", use "value": "testuser_12345"
-                """;
+                    ATTEMPT 1 - Add unique identifiers:
+                    - Append timestamp or random numbers to test data values
+                    - Example: Instead of "value": "testuser", use "value": "testuser_12345"
+                    """;
             case 2 -> """
-                ATTEMPT 2 - Add cleanup steps:
-                - Add steps at the end to clean up test data
-                - Clear form fields after use
-                - Add logout/reset steps
-                """;
+                    ATTEMPT 2 - Add cleanup steps:
+                    - Add steps at the end to clean up test data
+                    - Clear form fields after use
+                    - Add logout/reset steps
+                    """;
             default -> """
-                ATTEMPT 3 - Isolate test data:
-                - Use completely unique values for all data fields
-                - Add clear/reset steps before critical actions
-                - Ensure no data dependencies between steps
-                """;
+                    ATTEMPT 3 - Isolate test data:
+                    - Use completely unique values for all data fields
+                    - Add clear/reset steps before critical actions
+                    - Ensure no data dependencies between steps
+                    """;
         };
     }
 
     private String getEnvironmentFixStrategies(int attempt) {
         return switch (attempt) {
             case 1 -> """
-                ATTEMPT 1 - Add health checks:
-                - Add wait for page load: {"action": "wait", "locator": "load", "timeout": 5000}
-                - Wait for network idle before critical actions
-                """;
+                    ATTEMPT 1 - Add health checks:
+                    - Add wait for page load: {"action": "wait", "locator": "load", "timeout": 5000}
+                    - Wait for network idle before critical actions
+                    """;
             case 2 -> """
-                ATTEMPT 2 - Add retries:
-                - Add extra wait steps with longer timeouts
-                - Add page reload before flaky sections
-                """;
+                    ATTEMPT 2 - Add retries:
+                    - Add extra wait steps with longer timeouts
+                    - Add page reload before flaky sections
+                    """;
             default -> """
-                ATTEMPT 3 - Maximum resilience:
-                - Add waits everywhere
-                - Add page reload steps strategically
-                - Use longest timeouts
-                """;
+                    ATTEMPT 3 - Maximum resilience:
+                    - Add waits everywhere
+                    - Add page reload steps strategically
+                    - Use longest timeouts
+                    """;
         };
     }
 
     private String getLocatorFixStrategies(int attempt) {
         return switch (attempt) {
             case 1 -> """
-                ATTEMPT 1 - Use stable locators:
-                - Replace CSS/XPath with role-based locators
-                - Example: Change "css=#dynamic-id" to "role=button[name='Submit']"
-                - Use testId attributes if available: "[data-testid='button']"
-                """;
+                    ATTEMPT 1 - Use stable locators:
+                    - Replace CSS/XPath with role-based locators
+                    - Example: Change "css=#dynamic-id" to "role=button[name='Submit']"
+                    - Use testId attributes if available: "[data-testid='button']"
+                    """;
             case 2 -> """
-                ATTEMPT 2 - Add fallback locators:
-                - If role doesn't work, try text-based: "text=Submit"
-                - Try multiple locator strategies in sequence
-                """;
+                    ATTEMPT 2 - Add fallback locators:
+                    - If role doesn't work, try text-based: "text=Submit"
+                    - Try multiple locator strategies in sequence
+                    """;
             default -> """
-                ATTEMPT 3 - Most generic locators:
-                - Use text content: "text=Button Text"
-                - Use partial matches if needed
-                - Add waits before all click/type actions
-                """;
+                    ATTEMPT 3 - Most generic locators:
+                    - Use text content: "text=Button Text"
+                    - Use partial matches if needed
+                    - Add waits before all click/type actions
+                    """;
         };
     }
 
     private String getGenericFixStrategies(int attempt) {
         return """
-            UNKNOWN ROOT CAUSE - Apply general stability improvements:
-            - Add waits before all actions
-            - Increase all timeout values
-            - Add wait for page load and network idle
-            - Use more stable locators where possible
-            """;
+                UNKNOWN ROOT CAUSE - Apply general stability improvements:
+                - Add waits before all actions
+                - Increase all timeout values
+                - Add wait for page load and network idle
+                - Use more stable locators where possible
+                """;
     }
 
     /**
@@ -370,33 +373,51 @@ public class GenerateFixTool implements AgentTool {
             }
         }
 
-        // fixedTestCode must be a JSON string, not a Map/List.
-        // If the AI returned it as a nested object, serialize it back.
-        Object fixedTestCode = parsed.get("fixedTestCode");
-        if (fixedTestCode instanceof Map || fixedTestCode instanceof java.util.List) {
-            log.debug("fixedTestCode was a nested object — serializing to JSON string");
-            parsed.put("fixedTestCode", objectMapper.writeValueAsString(fixedTestCode));
-        } else if (fixedTestCode == null) {
-            // Last resort: if AI gave nothing useful, produce a sentinel that
-            // ApplyFixTool can reject cleanly rather than writing "null" to the DB.
-            log.warn("⚠️ AI returned no fixedTestCode — using empty steps sentinel");
-            parsed.put("fixedTestCode", "{\"steps\":[]}");
-        }
+        // In GenerateFixTool.java — parseFixResponse() method
 
-        // Normalize fixStrategy — look in various places the AI might put it
-        if (!parsed.containsKey("fixStrategy") || parsed.get("fixStrategy") == null) {
-            if (parsed.containsKey("rootCauseAnalysis")) {
-                parsed.put("fixStrategy", parsed.get("rootCauseAnalysis"));
-            } else if (parsed.containsKey("explanation")) {
-                parsed.put("fixStrategy", parsed.get("explanation"));
-            } else {
-                parsed.put("fixStrategy", "AI-generated fix");
+// Deduplicate: remove wait steps immediately before assertvisible on same locator
+        Object fixedTestCodeRaw = parsed.get("fixedTestCode");
+        if (fixedTestCodeRaw instanceof String fixedJson) {
+            try {
+                Map<String, Object> testContent = objectMapper.readValue(fixedJson, Map.class);
+                List<Map<String, Object>> steps = (List<Map<String, Object>>) testContent.get("steps");
+
+                if (steps != null && steps.size() > 1) {
+                    List<Map<String, Object>> deduped = new ArrayList<>();
+                    for (int i = 0; i < steps.size(); i++) {
+                        Map<String, Object> current = steps.get(i);
+                        Map<String, Object> next = (i + 1 < steps.size()) ? steps.get(i + 1) : null;
+
+                        // Drop wait if the next step is assertvisible on the same locator
+                        if ("wait".equals(current.get("action"))
+                                && next != null
+                                && "assertvisible".equals(next.get("action"))
+                                && Objects.equals(current.get("locator"), next.get("locator"))) {
+                            log.debug("🧹 Removed redundant wait before assertvisible: {}", current.get("locator"));
+                            continue;
+                        }
+
+                        // Drop consecutive exact duplicates (same action + locator + value)
+                        if (!deduped.isEmpty()) {
+                            Map<String, Object> prev = deduped.get(deduped.size() - 1);
+                            if (Objects.equals(prev.get("action"), current.get("action"))
+                                    && Objects.equals(prev.get("locator"), current.get("locator"))
+                                    && Objects.equals(prev.get("value"), current.get("value"))) {
+                                log.debug("🧹 Removed duplicate step: {}", current.get("action"));
+                                continue;
+                            }
+                        }
+                        deduped.add(current);
+                    }
+                    if (deduped.size() != steps.size()) {
+                        testContent.put("steps", deduped);
+                        parsed.put("fixedTestCode", objectMapper.writeValueAsString(testContent));
+                        log.info("🧹 Deduplication: {} → {} steps", steps.size(), deduped.size());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Could not deduplicate steps: {}", e.getMessage());
             }
-        }
-
-        // Normalize confidence
-        if (!parsed.containsKey("confidence") || parsed.get("confidence") == null) {
-            parsed.put("confidence", 0.5);
         }
 
         return parsed;

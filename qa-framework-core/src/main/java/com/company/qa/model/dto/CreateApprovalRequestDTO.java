@@ -36,8 +36,14 @@ public class CreateApprovalRequestDTO {
     // Configuration
     private Boolean autoExecuteOnApproval;
     private Integer expirationDays; // Optional, default 7
+    private Boolean autoCommitOnApproval;  // ADD THIS
+
+
+    // ADD THIS BLOCK before sanitization fields:
+    private UUID aiGeneratedTestId;
 
     // Sanitization info
     private Boolean sanitizationApplied;
     private Integer redactionCount;
+
 }

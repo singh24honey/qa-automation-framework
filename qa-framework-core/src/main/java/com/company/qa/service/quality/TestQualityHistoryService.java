@@ -146,7 +146,7 @@ public class TestQualityHistoryService {
                             .mapToInt(TestExecution::getDuration)
                             .average()
                             .orElse(0.0);
-                            //.longValue();
+            //.longValue();
 
             // Create snapshot
             TestQualitySnapshot snapshot = TestQualitySnapshot.builder()
@@ -200,9 +200,10 @@ public class TestQualityHistoryService {
 
             // Add browser to affected list if not present
             if (browser != null) {
-                Set<String> browsers = new HashSet<>(Arrays.asList(existing.getAffectedBrowsers()));
-                browsers.add(browser);
-                existing.setAffectedBrowsers(browsers.toArray(new String[0]));
+                List<String> browsers = new ArrayList<>(existing.getAffectedBrowsers() != null
+                        ? existing.getAffectedBrowsers() : Collections.emptyList());
+                if (!browsers.contains(browser)) browsers.add(browser);
+                existing.setAffectedBrowsers(browsers);
             }
 
             // Recalculate impact score
@@ -221,7 +222,7 @@ public class TestQualityHistoryService {
                     .occurrences(1)
                     .firstDetectedAt(Instant.now())
                     .lastDetectedAt(Instant.now())
-                    .affectedBrowsers(browser != null ? new String[]{browser} : new String[0])
+                    .affectedBrowsers(browser != null ? new ArrayList<>(List.of(browser)) : new ArrayList<>())
                     .impactScore(calculateImpactScore(testName, 1))
                     .build();
 
@@ -413,7 +414,7 @@ public class TestQualityHistoryService {
                 .isResolved(pattern.getIsResolved())
                 .resolvedAt(pattern.getResolvedAt())
                 .affectedBrowsers(pattern.getAffectedBrowsers() != null ?
-                        Arrays.asList(pattern.getAffectedBrowsers()) : Collections.emptyList())
+                        pattern.getAffectedBrowsers() : Collections.emptyList())
                 .impactScore(pattern.getImpactScore().doubleValue())
                 .build();
     }

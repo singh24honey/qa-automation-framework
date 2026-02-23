@@ -1,5 +1,6 @@
 package com.company.qa.service.approval;
 
+import com.company.qa.event.TestApprovedEvent;
 import com.company.qa.exception.ResourceNotFoundException;
 import com.company.qa.model.dto.*;
 import com.company.qa.model.entity.AIGeneratedTest;
@@ -11,11 +12,21 @@ import com.company.qa.service.git.GitService;
 import com.company.qa.service.notification.NotificationService;
 import com.company.qa.service.TestService;
 import com.company.qa.service.execution.TestExecutionService;
+import com.company.qa.service.playwright.PlaywrightJavaRenderer;
+import com.company.qa.service.playwright.TestIntentParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+// Add import at top of file
+import com.company.qa.model.entity.Test;
+import com.company.qa.repository.TestRepository;
+import com.company.qa.service.draft.DraftFileService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -44,6 +55,16 @@ public class ApprovalRequestService {
     private final NotificationService notificationService;
     private final GitService gitService;
     private final AIGeneratedTestRepository aiGeneratedTestRepository;
+    private final TestRepository testRepository;
+    private final DraftFileService draftFileService;
+    private final TestIntentParser testIntentParser;
+    private final PlaywrightJavaRenderer playwrightJavaRenderer;
+    private final ApplicationEventPublisher eventPublisher;
+    private final TestPromotionService testPromotionService;
+
+
+
+
 
 
     /**
@@ -70,12 +91,17 @@ public class ApprovalRequestService {
                         dto.getAutoExecuteOnApproval() : false)
                 .sanitizationApplied(dto.getSanitizationApplied())
                 .redactionCount(dto.getRedactionCount())
+                .autoCommitOnApproval(dto.getAutoCommitOnApproval() != null ?
+                        dto.getAutoCommitOnApproval() : false)
                 .build();
 
         // Set expiration
         int expirationDays = dto.getExpirationDays() != null ? dto.getExpirationDays() : 7;
         request.setExpiresAt(Instant.now().plus(Duration.ofDays(expirationDays)));
 
+        if(dto.getAiGeneratedTestId()!=null){
+            request.setAiGeneratedTestId(dto.getAiGeneratedTestId());
+        }
         ApprovalRequest saved = approvalRequestRepository.save(request);
 
         // TODO: Notify approvers
@@ -133,6 +159,10 @@ public class ApprovalRequestService {
     /**
      * Approve an approval request.
      */
+    /**
+     * Approve an approval request.
+     * Called by: ApprovalRequestController POST /{id}/approve
+     */
     @Transactional
     public ApprovalRequestDTO approveRequest(UUID requestId, ApprovalDecisionDTO decision) {
         log.info("Approving request: {} by reviewer: {}", requestId, decision.getReviewerId());
@@ -146,7 +176,7 @@ public class ApprovalRequestService {
                     "Cannot approve request in status: " + request.getStatus());
         }
 
-        // Check if expired
+        // Check if expired (was in approveRequest, missing from approve)
         if (request.isExpired()) {
             request.setStatus(ApprovalStatus.EXPIRED);
             approvalRequestRepository.save(request);
@@ -163,18 +193,103 @@ public class ApprovalRequestService {
 
         ApprovalRequest saved = approvalRequestRepository.save(request);
 
-        // Notify requester
-        notifyRequester(saved, true);
+// ✅ Promote in its OWN transaction (REQUIRES_NEW) → commits immediately
+// so publishTestApprovedEvent can find the row even while this outer txn is open
+        Test promotedTest = testPromotionService.promoteAndCommit(saved);
 
-        // Auto-execute if configured
-        if (Boolean.TRUE.equals(saved.getAutoExecuteOnApproval())) {
-            executeApprovedTest(saved);
+        syncDraftFile(saved);
+
+
+        // ✅ Trigger Git commit if configured (was in approve(), missing from approveRequest())
+        // ✅ FIXED: Only trigger Git if this approval has an aiGeneratedTestId
+// Agent-created approvals (from CreateApprovalRequestTool) don't set aiGeneratedTestId
+// and should not attempt Git commit — they handle Git themselves via separate agent steps
+        boolean shouldCommit = saved.getAiGeneratedTestId() != null          // ← ADD THIS CHECK
+                && saved.getAutoCommitOnApproval() != null
+                && saved.getAutoCommitOnApproval()
+                && !Boolean.TRUE.equals(decision.getSkipGitCommit());
+
+        if (shouldCommit) {
+            log.info("Auto-commit enabled, triggering Git workflow for approval: {}", requestId);
+            triggerGitCommit(saved);
+        } else if (saved.getAiGeneratedTestId() == null) {
+            log.info("Agent-managed approval — Git commit handled by agent workflow, skipping auto-commit");
+        } else {
+            log.info("Git commit deferred - will be triggered manually");
         }
 
-        log.info("Approved request: {}", requestId);
+        autoExecutePromotedTest(saved);
+
+        //publishTestApprovedEvent(saved);
+
+       // publishTestApprovedEvent(saved, promotedTest);
+
+        notifyRequester(saved, true);
+
+
+
+        log.info("✅ Approved request: {}", requestId);
         return toDTO(saved);
     }
 
+
+    private void publishTestApprovedEvent(ApprovalRequest saved, Test promotedTest) {
+        try {
+            if (promotedTest == null) {
+                log.warn("⚠️ publishTestApprovedEvent: promotedTest is null for approval {} — skipping",
+                        saved.getId());
+                return;
+            }
+            eventPublisher.publishEvent(new TestApprovedEvent(promotedTest.getId(), promotedTest.getName()));
+            log.info("📢 Published TestApprovedEvent for: {} (id={})",
+                    promotedTest.getName(), promotedTest.getId());
+        } catch (Exception e) {
+            log.warn("Failed to publish TestApprovedEvent: {}", e.getMessage());
+        }
+    }
+
+    private void publishTestApprovedEvent(ApprovalRequest saved) {
+        try {
+            Test test = null;
+
+            // PRIMARY: find via aiGeneratedTestId linkage (reliable, no name matching)
+            if (saved.getAiGeneratedTestId() != null) {
+
+                String uuid = saved.getId().toString().toLowerCase();
+
+                test = testRepository.findAll().stream()
+                        .filter(t -> {
+                            String desc = t.getDescription();
+
+                            System.out.println("UUID = [" + uuid + "]");
+                            System.out.println("DESC = [" + desc + "]");
+
+                            return desc != null &&
+                                    desc.toLowerCase().contains(uuid);
+                        })
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            // FALLBACK: name search if no description match
+            if (test == null && saved.getTestName() != null) {
+                List<Test> matches = testRepository.findByNameContainingIgnoreCase(saved.getTestName());
+                if (!matches.isEmpty()) test = matches.get(0);
+            }
+
+            if (test == null) {
+                log.warn("⚠️ publishTestApprovedEvent: no Test found for approval {} — skipping auto-execution",
+                        saved.getId());
+                return;
+            }
+
+            eventPublisher.publishEvent(new TestApprovedEvent(test.getId(), test.getName()));
+            log.info("📢 Published TestApprovedEvent for: {} (id={})", test.getName(), test.getId());
+
+        } catch (Exception e) {
+            log.warn("Failed to publish TestApprovedEvent: {}", e.getMessage());
+        }
+    }
     /**
      * Reject an approval request.
      */
@@ -311,41 +426,49 @@ public class ApprovalRequestService {
 
     // ========== Private Helper Methods (CORRECTED) ==========
 
-    private void executeApprovedTest(ApprovalRequest request) {
+    private void autoExecutePromotedTest(ApprovalRequest request) {
         try {
-            log.info("Auto-executing approved test: {}", request.getId());
+            // Find the test by name — it was just promoted (or already existed)
+           /* String testName = request.getTestName();
+            if (testName == null) return;
 
-            // Create test from approved content
-            TestDto testDto = TestDto.builder()
-                    .name(request.getTestName())
-                    .description("AI-generated test - Approved by " + request.getReviewedByName())
-                    .content(request.getGeneratedContent())
-                    .framework(com.company.qa.model.enums.TestFramework.valueOf(
-                            request.getTestFramework()))
-                    .language(request.getTestLanguage())
-                    .build();
+            List<Test> matches = testRepository.findByNameContainingIgnoreCase(testName);
+            if (matches.isEmpty()) {
+                log.warn("⚠️ Cannot auto-execute — no test found with name: {}", testName);
+                return;
+            }
 
-            TestDto createdTest = testService.createTest(testDto);
-            request.setExecutedTestId(createdTest.getId());
+            Test test = matches.get(0);
+            log.info("🚀 Auto-executing promoted test: {} (id: {})", test.getName(), test.getId());*/
+           Test test = null;
 
-            // Execute the test - FIXED: removed triggeredBy field
+            if (request.getAiGeneratedTestId() != null) {
+
+                String uuid = request.getId().toString().toLowerCase();
+
+                test = testRepository.findAll().stream()
+                        .filter(t -> {
+                            String desc = t.getDescription();
+                            return desc != null &&
+                                    desc.toLowerCase().contains(uuid);
+                        })
+                        .findFirst()
+                        .orElse(null);
+            }
+
             ExecutionRequest executionRequest = ExecutionRequest.builder()
-                    .testId(createdTest.getId())
-                    .browser(com.company.qa.model.enums.BrowserType.CHROME.name())
+                    .testId(test.getId())
+                    .browser("FIREFOX") // Default browser for auto-execution, can be made configurable
                     .environment("production")
                     .headless(false)
                     .build();
 
             ExecutionResponse execution = testExecutionService.startExecution(executionRequest);
-            request.setExecutionId(execution.getExecutionId());
-
-            approvalRequestRepository.save(request);
-
-            log.info("Auto-executed test: {} with execution: {}",
-                    createdTest.getId(), execution.getExecutionId());
+            log.info("✅ Execution started: {} for test: {}", execution.getExecutionId(), test.getName());
 
         } catch (Exception e) {
-            log.error("Failed to auto-execute approved test: {}", e.getMessage(), e);
+            // Non-fatal — approval already succeeded
+            log.error("❌ Failed to auto-execute promoted test: {}", e.getMessage(), e);
         }
     }
 
@@ -427,6 +550,7 @@ public class ApprovalRequestService {
                     .content(content)
                     .event(approved ? NotificationEvent.TEST_COMPLETED : NotificationEvent.TEST_FAILED)
                     .testId(request.getExecutedTestId())
+                    .testName(request.getTestName())
                     .executionId(request.getExecutionId())
                     .build();
 
@@ -468,6 +592,7 @@ public class ApprovalRequestService {
                     .subject(subject)
                     .content(content)
                     .event(request.getStatus().equals(ApprovalStatus.APPROVED) ? NotificationEvent.TEST_COMPLETED : NotificationEvent.TEST_FAILED)
+                    .testName(request.getTestName())
                     .testId(request.getExecutedTestId())
                     .executionId(request.getExecutionId())
                     .build();
@@ -531,51 +656,144 @@ public class ApprovalRequestService {
                 .build();
     }
 
-    @Transactional
-    public ApprovalRequestDTO approve(UUID id, ApprovalDecisionDTO decision) {
-        log.info("Approving request: {}", id);
+    /**
+     * After approval, create a Test entity row from the AIGeneratedTest so that
+     * SelfHealingAgent and FlakyTestAgent (which read from the 'tests' table) can
+     * discover and work with this test.
+     *
+     * The Test.content column stores the intent JSON — the same format as
+     * AIGeneratedTest.testCodeJsonRaw — which PlaywrightTestExecutor can run directly.
+     */
+    private void promoteToTestsTable(ApprovalRequest request) {
 
-        ApprovalRequest request = approvalRequestRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Approval request", id.toString()));
-
-        // Validate current status
-        if (request.getStatus() != ApprovalStatus.PENDING_APPROVAL) {
-            throw new IllegalStateException(
-                    "Cannot approve request in status: " + request.getStatus()
-            );
+        // ── 1. DB promotion (your existing logic — unchanged) ────────────────────
+        if (request.getAiGeneratedTestId() == null) {
+            log.debug("No aiGeneratedTestId on approval {} — skipping test table promotion",
+                    request.getId());
+            // Still attempt file sync for SELF_HEALING_FIX which has no aiGeneratedTestId
+            syncDraftFile(request);
+            return;
         }
 
-        // Update approval status
-        request.setStatus(ApprovalStatus.APPROVED);
-        request.setReviewedById(decision.getReviewerId());
-        request.setReviewedByName(decision.getReviewerName());
-        request.setReviewedByEmail(decision.getReviewerEmail());
-        request.setReviewedAt(Instant.now());
-        request.setApprovalDecisionNotes(decision.getNotes());
+        try {
+            AIGeneratedTest aiTest = aiGeneratedTestRepository
+                    .findById(request.getAiGeneratedTestId())
+                    .orElse(null);
 
-        ApprovalRequest savedRequest = approvalRequestRepository.save(request);
+            if (aiTest == null) {
+                log.warn("⚠️ AIGeneratedTest {} not found — cannot promote to tests table",
+                        request.getAiGeneratedTestId());
+                return;
+            }
 
-        // Trigger Git commit if configured and not skipped
-        boolean shouldCommit = request.getAutoCommitOnApproval() != null &&
-                request.getAutoCommitOnApproval() &&
-                !Boolean.TRUE.equals(decision.getSkipGitCommit());
+            // Avoid creating a duplicate row if already promoted (e.g. retry scenario)
+            boolean alreadyExists = !testRepository
+                    .findByNameAndFramework(aiTest.getTestName(), TestFramework.PLAYWRIGHT)
+                    .isEmpty();
 
-        if (shouldCommit) {
-            log.info("Auto-commit enabled, triggering Git workflow");
-            triggerGitCommit(savedRequest);
+            if (alreadyExists) {
+                log.info("ℹ️ Test '{}' already exists in tests table — skipping promotion",
+                        aiTest.getTestName());
+                syncDraftFile(request);   // Still sync the file even if DB row exists
+                return;
+            }
+
+            // intent JSON stored in testCodeJsonRaw is exactly what PlaywrightTestExecutor
+            // and AnalyzeTestStabilityTool expect in Test.content
+            String intentJson = aiTest.getTestCodeJsonRaw();
+            if (intentJson == null || intentJson.isBlank()) {
+                log.warn("⚠️ AIGeneratedTest {} has no testCodeJsonRaw — cannot promote",
+                        aiTest.getId());
+                return;
+            }
+
+            Test test = Test.builder()
+                    .name(aiTest.getTestName())
+                    .description("AI-generated from JIRA: " + aiTest.getJiraStoryKey()
+                            + " | Approval: " + request.getId())
+                    .framework(TestFramework.PLAYWRIGHT)
+                    .language("Java")
+                    .content(intentJson)
+                    .priority(Priority.MEDIUM)
+                    .isActive(true)
+                    .notifyOnFailure(true)
+                    .notifyOnSuccess(false)
+                    .build();
+
+            Test saved = testRepository.save(test);
+
+            log.info("✅ Promoted AIGeneratedTest {} → tests table as Test {} (name: {})",
+                    aiTest.getId(), saved.getId(), saved.getName());
+
+        } catch (Exception e) {
+            // Non-fatal — approval succeeds even if promotion fails
+            log.error("❌ Failed to promote AIGeneratedTest to tests table for approval {}: {}",
+                    request.getId(), e.getMessage(), e);
+        }
+
+        // ── 2. File sync (new) ────────────────────────────────────────────────────
+        syncDraftFile(request);
+    }
+
+    /**
+     * Render the approved INTENT_V1 content to Java and write it to
+     * {@code playwright-tests/drafts/} so the QA team's local run is always in sync.
+     *
+     * <p>Uses the same Zero-Hallucination pipeline ({@link TestIntentParser} →
+     * {@link PlaywrightJavaRenderer}) as generation — no bespoke key extraction.
+     */
+    private void syncDraftFile(ApprovalRequest request) {
+        ApprovalRequestType type = request.getRequestType();
+
+        // Determine the INTENT_V1 JSON source based on approval type
+        String intentJson;
+        if (type == ApprovalRequestType.TEST_GENERATION) {
+            // Source: AIGeneratedTest.testCodeJsonRaw (most reliable — full pipeline output)
+            if (request.getAiGeneratedTestId() == null) return;
+            AIGeneratedTest aiTest = aiGeneratedTestRepository
+                    .findById(request.getAiGeneratedTestId()).orElse(null);
+            if (aiTest == null) return;
+            intentJson = aiTest.getTestCodeJsonRaw();
+
+        } else if (type == ApprovalRequestType.SELF_HEALING_FIX) {
+            // Source: ApprovalRequest.generatedContent (INTENT_V1 JSON from SelfHealingAgent)
+            intentJson = request.getGeneratedContent();
+
         } else {
-            log.info("Git commit deferred - will be triggered manually");
+            // FLAKY_FIX    — Git branch already has the file, no sync needed
+            // FLAKY_MANUAL — content is original broken version, writing would regress
+            // *_MANUAL     — human must decide, do not auto-write
+            log.debug("Skipping file sync for approval type {}", type);
+            return;
         }
 
-        // Notify stakeholders
-        notifyApprovers(savedRequest);
-
-        // Auto-execute test if configured
-        if (request.getAutoExecuteOnApproval() && request.getExecutedTestId() != null) {
-            executeApprovedTest(savedRequest);
+        if (intentJson == null || intentJson.isBlank()) {
+            log.warn("⚠️ No INTENT_V1 content available for file sync on approval {}", request.getId());
+            return;
         }
 
-        return toDTO(savedRequest);
+        try {
+            // Parse → validate → render using the canonical Zero-Hallucination pipeline
+            TestIntentParser.ParseResult result = testIntentParser.parse(intentJson);
+
+            if (!result.isSuccess()) {
+                log.warn("⚠️ Could not parse INTENT_V1 for approval {} (type={}) — skipping file sync: {}",
+                        request.getId(), type, result.getErrorMessage());
+                return;
+            }
+
+            String renderedJava   = playwrightJavaRenderer.render(result.getIntent());
+            String testClassName  = result.getIntent().getTestClassName();
+            String fileName       = testClassName + ".java";
+
+            draftFileService.saveToDrafts(fileName, renderedJava);
+            log.info("✅ [{}] Synced rendered Java to playwright-tests/drafts/{}", type, fileName);
+
+        } catch (Exception e) {
+            // Non-fatal — DB promotion already succeeded, file sync is best-effort
+            log.warn("⚠️ File sync failed for {} approval {}: {}",
+                    type, request.getId(), e.getMessage());
+        }
     }
 
     /**

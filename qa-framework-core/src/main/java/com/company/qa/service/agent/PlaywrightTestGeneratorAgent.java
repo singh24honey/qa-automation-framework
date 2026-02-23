@@ -237,12 +237,17 @@ public class PlaywrightTestGeneratorAgent extends BaseAgent {
         String testCode = context.getWorkProduct("testCode", String.class);
         String testName = context.getWorkProduct("testClassName", String.class);
         String jiraKey = (String) context.getGoal().getParameters().get("jiraKey");
+        UUID aiTestUUID  = context.getWorkProduct("generatedTestId", UUID.class);
+
+        String aiTestId  = aiTestUUID != null ? aiTestUUID.toString() : null;
 
         Map<String, Object> params = new HashMap<>();
         params.put("testCode", testCode);
         params.put("jiraKey", jiraKey);
         params.put("requestedBy", "agent");
         params.put("testName", testName);
+        params.put("aiGeneratedTestId",  aiTestId); // ✅ ADD — links approval to AIGeneratedTest
+
 
         return AgentPlan.builder()
                 .nextAction(AgentActionType.REQUEST_APPROVAL)

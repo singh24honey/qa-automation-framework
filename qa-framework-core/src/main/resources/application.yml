@@ -170,3 +170,9 @@ qa:
   framework:
     registry:
     path: ${user.home}/qa-framework/registry/element-registry-saucedemo.json
+
+
+cors:
+  allowed-origins:
+    - http://localhost:3000
+    - http://localhost:8080

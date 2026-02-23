@@ -276,20 +276,52 @@ git:
 # PLAYWRIGHT - DEVELOPMENT OVERRIDES
 # ============================================================
 playwright:
-  browser: firefox
-  headless: false      # See browser during development
-  slow-mo: 100         # Slow down to see actions (100ms)
-  record-video: true   # Record videos for debugging
-  record-trace: true   # Capture traces
-  timeout: 60000       # Longer timeout for debugging (60 sec)
 
+
+  intent:
+    enabled: true
+
+# ============================================================
+# PLAYWRIGHT CONFIGURATION
+# ============================================================
+
+  # Enable/disable Playwright
+  enabled: ${PLAYWRIGHT_ENABLED:true}
+
+  # Browser type: chromium, firefox, webkit
+  browser: ${PLAYWRIGHT_BROWSER:firefox}
+
+  # Headless mode (no GUI)
+  headless: ${PLAYWRIGHT_HEADLESS:false}
+
+  # Default timeout in milliseconds
+  timeout: ${PLAYWRIGHT_TIMEOUT:30000}
+
+  # Slow down operations (milliseconds) - for debugging
+  slow-mo: ${PLAYWRIGHT_SLOW_MO:0}
+
+  # Recording options
+  record-video: ${PLAYWRIGHT_RECORD_VIDEO:false}
+  record-trace: ${PLAYWRIGHT_RECORD_TRACE:true}
+
+  # Artifact directories (will be created automatically)
+  screenshot-dir: ${user.home}/qa-framework/artifacts/screenshots
+  trace-dir: ${user.home}/qa-framework/artifacts/traces
+  video-dir: ${user.home}/qa-framework/artifacts/videos
+
+  # Viewport dimensions
+  viewport:
+    width: 1920
+    height: 1080
+
+  # Browser context options
+  accept-downloads: true
+  ignore-https-errors: false
 
   page-objects:
     scan-path: src/test/java
     package-pattern: .*\.pages\..*
 
-  intent:
-    enabled: true
 # Sauce Demo Configuration
 saucedemo:
   base-url: https://www.saucedemo.com
@@ -372,3 +404,5 @@ qa:
   framework:
     registry:
     path: ${user.home}/qa-framework/registry/element-registry-saucedemo.json
+
+

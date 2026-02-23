@@ -157,27 +157,67 @@ public class TestIntentValidator {
 
     // R8 + R9: No Java code in locators
     private void validateLocatorFormat(String locator, String label, ValidationResult result) {
+        // Existing: check forbidden Java patterns
         for (String forbidden : FORBIDDEN_LOCATOR_PATTERNS) {
             if (locator.contains(forbidden)) {
-                result.addError(label + ": locator contains Java code '" + forbidden
-                        + "' — use selector-only format (e.g., 'css=[data-test=\"username\"]')");
+                result.addError(label + ": locator contains Java code '" + forbidden + "'");
                 return;
             }
         }
 
-        // Validate strategy prefix if present
+        // Existing: check strategy prefix
         if (locator.contains("=")) {
             String strategy = locator.substring(0, locator.indexOf('=')).trim().toLowerCase();
             Set<String> validStrategies = Set.of(
-                    "role", "label", "text", "testid", "css", "xpath", "id", "name", "class"
-            );
+                    "role", "label", "text", "testid", "css", "xpath", "id", "name", "class");
             if (!validStrategies.contains(strategy)) {
-                result.addError(label + ": unknown locator strategy '" + strategy
-                        + "'. Valid: " + validStrategies);
+                result.addError(label + ": unknown locator strategy '" + strategy + "'");
+                return;
+            }
+
+            // ✅ NEW: validate CSS selector value for common mistakes
+            if ("css".equals(strategy)) {
+                String cssValue = locator.substring(locator.indexOf('=') + 1).trim();
+                validateCssSelector(cssValue, label, result);
             }
         }
     }
 
+    /**
+     * Detects common AI-generated CSS mistakes:
+     *
+     * 1. Compound multi-class selectors without descendant space
+     *    e.g. ".parent-class.child-class" — means same element has both classes,
+     *    but the DOM usually has them on parent/child elements.
+     *    Correct: ".parent-class .child-class" (with space)
+     *
+     * 2. nth-child + class without space
+     *    e.g. ".inventory_item:nth-child(1).btn_inventory"
+     *    Correct: ".inventory_item:nth-child(1) .btn_inventory"
+     */
+    private void validateCssSelector(String cssValue, String label, ValidationResult result) {
+        // Pattern: ":nth-child(N).someClass" or ":nth-of-type(N).someClass"
+        // nth-child pseudo selects the element — .class after it means SAME element has that class
+        // Usually this is a mistake: the button is a CHILD, not the same element
+        if (cssValue.matches(".*:nth-child\\(\\d+\\)\\.\\w.*") ||
+                cssValue.matches(".*:nth-of-type\\(\\d+\\)\\.\\w.*")) {
+            result.addWarning(label + ": CSS selector '" + cssValue +
+                    "' uses ':nth-child(N).class' which targets an element that must have BOTH the " +
+                    "nth-child position AND the class simultaneously. " +
+                    "If the class is on a child element, add a space: ':nth-child(N) .class'. " +
+                    "Prefer testid= locators for stability.");
+        }
+
+        // Pattern: ".classA.classB" where classB looks like a button/action class (not a modifier)
+        // e.g. ".inventory_item.btn_inventory" — btn_ prefix on a child element is suspicious
+        if (cssValue.matches(".*\\.[a-z_]+\\.[a-z]*btn[a-z_]*.*") ||
+                cssValue.matches(".*\\.[a-z_]+\\.[a-z]*button[a-z_]*.*")) {
+            result.addWarning(label + ": CSS selector '" + cssValue +
+                    "' chains a container class with a button class. " +
+                    "Buttons are usually child elements — use a descendant space: '.container .btn'. " +
+                    "Prefer testid= locators for stability.");
+        }
+    }
     private boolean isBlank(String s) {
         return s == null || s.isBlank();
     }
